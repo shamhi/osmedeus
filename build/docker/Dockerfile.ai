@@ -13,7 +13,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: builder ─────────────────────────────────────────────────────────
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 ARG BUILD_TIME
 ARG COMMIT_HASH
@@ -51,12 +51,17 @@ RUN apt-get update && \
         python3 python3-pip python3-venv \
         dnsutils whois curl wget \
         libpcap-dev git jq ca-certificates \
-        nmap masscan nikto sqlmap chromium \
+        nmap masscan chromium \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 
 # ── Pip packages ─────────────────────────────────────────────────────────────
-RUN python3 -m pip install --no-cache-dir --break-system-packages sslyze
+RUN python3 -m pip install --no-cache-dir --break-system-packages sslyze sqlmap
+
+# ── nikto (not in Debian bookworm repos) ─────────────────────────────────────
+RUN git clone --depth 1 https://github.com/sullo/nikto /opt/nikto && \
+    ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto && \
+    chmod +x /opt/nikto/program/nikto.pl
 
 # ── testssl.sh (not available via apt) ───────────────────────────────────────
 RUN git clone --depth 1 https://github.com/drwetter/testssl.sh /opt/testssl.sh && \
@@ -66,7 +71,7 @@ RUN git clone --depth 1 https://github.com/drwetter/testssl.sh /opt/testssl.sh &
 COPY --from=builder /osmedeus /usr/local/bin/osmedeus
 
 # ── Copy Go tool binaries ────────────────────────────────────────────────────
-COPY --from=builder /root/go/bin/* /usr/local/bin/
+COPY --from=builder /go/bin/* /usr/local/bin/
 
 # ── Create base directory structure ──────────────────────────────────────────
 RUN mkdir -p /root/osmedeus-base/output \

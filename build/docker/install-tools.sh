@@ -57,10 +57,11 @@ install_go_tools() {
 }
 
 # ── Apt packages ─────────────────────────────────────────────────────────────
+# nikto, testssl.sh, whatweb are installed from source in Dockerfile (not in repos)
 
 APT_PACKAGES=(
     # Scanning / recon
-    nmap masscan whatweb nikto sqlmap testssl.sh
+    nmap masscan
     # Headless browser
     chromium
     # Python
@@ -124,6 +125,7 @@ install_pip_packages() {
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+# Only run main when executed directly (not when sourced)
 
 main() {
     log "Osmedeus AI scanner — security tool installer"
@@ -136,4 +138,7 @@ main() {
     log "All tools installed successfully ✓"
 }
 
-main "$@"
+# Guard: skip main() when sourced (e.g. Dockerfile: source + call single fn)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
