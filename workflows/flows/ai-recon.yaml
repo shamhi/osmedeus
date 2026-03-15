@@ -1,0 +1,51 @@
+# =============================================================================
+# AI Recon Flow — Reconnaissance-Only AI Scan
+# =============================================================================
+# The brain controller operates in recon-only profile, focusing exclusively
+# on asset discovery, subdomain enumeration, port scanning, and service
+# fingerprinting without attempting any vulnerability exploitation.
+#
+# Usage:
+#   osmedeus run -f ai-recon -t example.com
+#   osmedeus run -f ai-recon -t example.com --timeout 2h
+
+name: ai-recon
+kind: flow
+description: Recon-only AI scan — brain focuses on asset discovery and enumeration
+tags: ai, recon, brain, enumeration, passive
+
+params:
+  - name: profile
+    value: "recon-only"
+  - name: max_iterations
+    value: "20"
+  - name: threads
+    value: "30"
+  - name: timeout
+    value: "7200"
+
+modules:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Brain Controller — Recon-Only Profile
+  # Lower iteration count since reconnaissance is more bounded than a full
+  # scan. The agent will enumerate subdomains, resolve DNS, probe HTTP
+  # services, and identify technologies without launching vuln scanners.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: brain-controller
+    path: modules/brain/controller.yaml
+    params:
+      profile: "{{profile}}"
+      max_iterations: "{{max_iterations}}"
+      threads: "{{threads}}"
+      timeout: "{{timeout}}"
+    condition: "true"
+    on_success:
+      - action: log
+        message: "AI recon completed for {{Target}}"
+      - action: notify
+        notify: "AI recon finished for {{Target}} — discovered assets in {{Output}}"
+    on_error:
+      - action: log
+        message: "AI recon encountered an error for {{Target}}"
+      - action: continue
+        message: "Brain controller stopped — partial recon data may be available"

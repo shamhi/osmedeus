@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.ai.yaml — Osmedeus AI Scanner Stack
+#
+# Quick start:
+#   OPENAI_API_KEY=sk-xxx docker compose -f build/docker/docker-compose.ai.yaml up -d
+#
+# Run a scan:
+#   docker compose -f build/docker/docker-compose.ai.yaml exec osmedeus \
+#     osmedeus run -f ai-scan -t target.com
+#
+# View logs:
+#   docker compose -f build/docker/docker-compose.ai.yaml logs -f osmedeus
+#
+# Tear down:
+#   docker compose -f build/docker/docker-compose.ai.yaml down
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Osmedeus AI Scanner ──────────────────────────────────────────────────
+  osmedeus:
+    build:
+      context: ../../
+      dockerfile: build/docker/Dockerfile.ai
+      args:
+        BUILD_TIME: "${BUILD_TIME:-}"
+        COMMIT_HASH: "${COMMIT_HASH:-}"
+    image: osmedeus-ai:latest
+    container_name: osmedeus-ai
+    ports:
+      - "8002:8002"
+
+    volumes:
+      # Mount workflow & prompt sources read-only for live editing
+      - ./../../workflows:/root/osmedeus-base/workflows:ro
+      - ./../../prompts:/root/osmedeus-base/prompts:ro
+      # Persistent named volumes for scan data
+      - osmedeus-output:/root/osmedeus-base/output
+      - osmedeus-sessions:/root/osmedeus-base/sessions
+
+    environment:
+      # LLM / AI configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
+      # Scanner tuning
+      - OSMEDEUS_THREADS=${OSMEDEUS_THREADS:-10}
+
+    # NET_RAW is required for raw-socket tools (nmap SYN scan, masscan)
+    cap_add:
+      - NET_RAW
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+    networks:
+      - osmedeus-ai
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Redis (optional — for distributed task queue) ────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: osmedeus-ai-redis
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    networks:
+      - osmedeus-ai
+
+# ── Persistent volumes ────────────────────────────────────────────────────────
+volumes:
+  osmedeus-output:
+    driver: local
+  osmedeus-sessions:
+    driver: local
+
+# ── Network ───────────────────────────────────────────────────────────────────
+networks:
+  osmedeus-ai:
+    driver: bridge

@@ -1,0 +1,55 @@
+# =============================================================================
+# AI Red Team Flow — Adversarial Simulation
+# =============================================================================
+# The brain controller operates in red-team profile with a high iteration
+# limit, simulating a persistent adversary. The agent will chain findings,
+# pivot through discovered services, and attempt deeper exploitation paths.
+#
+# WARNING: This flow may generate significant traffic and attempt active
+# exploitation. Only run against targets you have explicit authorization
+# to test.
+#
+# Usage:
+#   osmedeus run -f ai-redteam -t example.com
+#   osmedeus run -f ai-redteam -t example.com --timeout 6h
+
+name: ai-redteam
+kind: flow
+description: Red team simulation — persistent AI adversary with deep exploitation capabilities
+tags: ai, redteam, brain, offensive, adversarial
+
+params:
+  - name: profile
+    value: "red-team"
+  - name: max_iterations
+    value: "80"
+  - name: threads
+    value: "15"
+  - name: timeout
+    value: "21600"
+
+modules:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Brain Controller — Red Team Profile
+  # High iteration count (80) allows the agent to pursue long exploitation
+  # chains: recon → service enum → vuln discovery → exploit → pivot.
+  # Lower thread count (15) to reduce noise and detection surface.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: brain-controller
+    path: modules/brain/controller.yaml
+    params:
+      profile: "{{profile}}"
+      max_iterations: "{{max_iterations}}"
+      threads: "{{threads}}"
+      timeout: "{{timeout}}"
+    condition: "true"
+    on_success:
+      - action: log
+        message: "Red team simulation completed for {{Target}}"
+      - action: notify
+        notify: "Red team assessment finished for {{Target}} — review {{Output}} for attack paths"
+    on_error:
+      - action: log
+        message: "Red team simulation encountered an error for {{Target}}"
+      - action: continue
+        message: "Brain controller stopped — partial attack chain results may be available"

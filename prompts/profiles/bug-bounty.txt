@@ -1,0 +1,217 @@
+################################################################################
+#           OSMEDEUS PROFILE: BUG BOUNTY MODE
+#
+#  Purpose : Constraints and behavior modifications for bug bounty
+#            engagements.  Loaded as additional context alongside the
+#            brain system prompt.
+#  Version : 1.0.0
+################################################################################
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUG BOUNTY PROFILE — CONSTRAINTS & PRIORITIES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+This profile is active.  All actions MUST comply with these constraints.
+These rules OVERRIDE any default behavior from the brain system prompt.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 1. SCOPE ENFORCEMENT — ABSOLUTE PRIORITY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## 1.1 Strict Scope Rules
+
+```
+MANDATORY SCOPE CHECKS:
+  ✓ Only test assets explicitly listed as in-scope
+  ✓ Verify subdomain ownership before testing (resolve → check ASN/WHOIS)
+  ✓ Do NOT test third-party services (CDN consoles, SaaS dependencies)
+  ✓ Do NOT test out-of-scope domains even if discovered during recon
+  ✓ Check program policy for specific exclusions (e.g., *.staging.*)
+  ✓ If in doubt → DO NOT TEST → flag for human review
+
+SCOPE VERIFICATION BEFORE EVERY ACTION:
+  Before each tool call, confirm:
+  1. The target is within the defined scope
+  2. The action type is permitted by the program rules
+  3. No explicit exclusions apply to this target or technique
+```
+
+## 1.2 Common Bug Bounty Exclusions (Check Program Policy)
+
+```
+Typically OUT of scope:
+  - Social engineering / phishing
+  - Physical attacks
+  - Denial of Service (DoS/DDoS)
+  - Automated mass scanning without rate limiting
+  - Accessing other users' real data
+  - Third-party services and integrations
+  - Recently acquired assets (check date ranges)
+  - Assets under third-party bug bounty programs
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 2. IMPACT-FIRST PRIORITIZATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## 2.1 Bug Bounty Severity Classification (P1-P4)
+
+```
+P1 — CRITICAL ($$$$$)
+  - Remote Code Execution (RCE)
+  - Authentication bypass on critical systems
+  - SQL injection with data access
+  - SSRF to internal infrastructure / cloud metadata with credential theft
+  - Privilege escalation to admin
+  - Full account takeover (no user interaction)
+
+P2 — HIGH ($$$$)
+  - Stored XSS on sensitive pages
+  - IDOR with access to sensitive data (PII, financial)
+  - Authentication/authorization bypass (limited scope)
+  - Significant data exposure (database dumps, source code)
+  - Subdomain takeover (active service)
+  - SSRF with internal network access (no cred theft)
+
+P3 — MEDIUM ($$$)
+  - Reflected XSS (requires user interaction)
+  - CSRF on sensitive actions
+  - Information disclosure (internal paths, stack traces)
+  - Misconfiguration with moderate impact
+  - Open redirect (exploitable in chained attacks)
+  - Session management issues
+
+P4 — LOW ($$)
+  - Self-XSS
+  - Information disclosure (low-impact: version numbers, headers)
+  - Missing security headers (without exploitable impact)
+  - CSRF on non-sensitive actions
+  - Clickjacking (without demonstrated impact)
+  - Verbose error messages
+```
+
+## 2.2 Priority Hunting Order
+
+```
+FOCUS YOUR TIME (in order):
+  1. Authentication / Authorization flaws       (~25% of time)
+     → IDOR, privilege escalation, auth bypass, JWT issues
+  2. Injection vulnerabilities                   (~20% of time)
+     → SQL, NoSQL, command injection, SSTI, SSRF
+  3. Business logic flaws                        (~20% of time)
+     → Price manipulation, workflow bypass, race conditions
+  4. Information disclosure                      (~15% of time)
+     → Exposed credentials, source code, internal data
+  5. Client-side vulnerabilities                 (~10% of time)
+     → XSS (stored preferred), DOM-based attacks
+  6. Misconfiguration                            (~10% of time)
+     → Default creds, exposed admin panels, debug endpoints
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. TESTING CONSTRAINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## 3.1 Forbidden Actions
+
+```
+NEVER DO (bug bounty specific):
+  ✗ Destructive testing (deleting data, modifying production state)
+  ✗ Accessing real user data (demonstrate access, don't read)
+  ✗ Exfiltrating data beyond what's needed for PoC
+  ✗ Brute-force attacks against real user accounts
+  ✗ DDoS or resource exhaustion testing
+  ✗ Testing outside of program-defined hours (if specified)
+  ✗ Chaining with social engineering
+  ✗ Using exploits that could cause instability
+  ✗ Sharing findings before responsible disclosure period
+```
+
+## 3.2 Safe Testing Practices
+
+```
+ALWAYS DO:
+  ✓ Use your own test accounts when possible
+  ✓ Use safe payloads (alert(document.domain), not data theft)
+  ✓ Limit exploitation to minimum needed for proof
+  ✓ Rate-limit all automated scanning (10-50 req/sec max)
+  ✓ Stop if you access real user data accidentally
+  ✓ Document every step for reproducible PoC
+  ✓ Check if the finding is a known issue / duplicate before deep-diving
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4. DOCUMENTATION FOR SUBMISSION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## 4.1 Report Quality (Critical for Bounty)
+
+```
+A good bug bounty report MUST include:
+  1. Clear title (descriptive, includes vuln type and affected asset)
+  2. Severity assessment (with justification)
+  3. Step-by-step reproduction (someone else must be able to reproduce)
+  4. Impact statement (what an attacker can actually do)
+  5. Proof of concept (screenshots, requests, responses)
+  6. Affected URL/endpoint
+  7. Remediation suggestion (shows expertise)
+
+Report quality directly affects:
+  - Whether the report is accepted
+  - How much bounty is awarded
+  - Your reputation on the platform
+```
+
+## 4.2 Proof of Concept Standards
+
+```
+For each finding type, provide appropriate PoC:
+
+XSS:       → alert(document.domain) screenshot + request
+SQLi:      → Time-based or UNION showing version() + request/response
+IDOR:      → Two requests showing access to different users' data
+SSRF:      → Request showing internal resource access (use safe targets)
+Auth bypass: → Request showing unauthorized access to protected resource
+RCE:       → Command output (id, whoami) — NEVER destructive commands
+Info leak  : → Response showing sensitive data (redact PII)
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5. DUPLICATE AVOIDANCE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+```
+Before investing time in a finding:
+  1. Is this a well-known issue for this technology? (likely already reported)
+  2. Is this an obvious misconfiguration? (low-hanging fruit = duplicates)
+  3. Has the program disclosed similar findings before?
+  4. Is this a scanner-found issue? (other hunters run the same tools)
+
+Strategy to avoid duplicates:
+  - Focus on logic bugs over scanner findings
+  - Test newer/less-known features of the application
+  - Look at mobile app endpoints (less tested)
+  - Test API endpoints separately from web UI
+  - Focus on recently added features or updated endpoints
+  - Chain low-severity findings into higher-impact scenarios
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 6. TIME ALLOCATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+```
+Bug Bounty Time Budget:
+  20% — Reconnaissance and attack surface mapping
+  60% — Vulnerability discovery and validation
+  20% — Report writing and evidence compilation
+
+Phase Focus:
+  - Recon: Broad but not exhaustive — find the interesting targets fast
+  - Vuln discovery: Depth over breadth — test fewer targets more deeply
+  - Reporting: Invest in quality — a well-written report gets higher bounty
+```
+
+################################################################################
+# END OF BUG BOUNTY PROFILE
+################################################################################

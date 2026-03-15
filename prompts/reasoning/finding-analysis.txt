@@ -1,0 +1,362 @@
+################################################################################
+#            OSMEDEUS FINDING ANALYSIS — REASONING TEMPLATE
+#
+#  Purpose : Injected when the brain needs to analyze raw tool output.
+#            Forces systematic parsing, triage, and follow-up planning.
+#  Usage   : Referenced after every significant tool execution.
+#  Version : 1.0.0
+################################################################################
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FINDING ANALYSIS REASONING TEMPLATE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+After receiving tool output, work through this analysis template before
+proceeding to the next action.  Rushing past results is how real attackers
+miss critical findings and how automated scanners generate noise.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 1: RAW OUTPUT PARSING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Systematically extract information from the raw output:
+
+```
+RAW OUTPUT ANALYSIS
+====================
+Tool Used     : [tool name and exact command]
+Target        : [what was scanned/tested]
+Execution Time: [how long it took — unusually fast or slow?]
+Exit Status   : [success, error, timeout, partial]
+Output Size   : [amount of data returned — expected or surprising?]
+
+Extracted Data Points:
+  1. [Data point: value — significance]
+  2. [Data point: value — significance]
+  3. [Data point: value — significance]
+  ...
+
+Data Quality Assessment:
+  - Completeness: [Did the tool finish? Any truncation?]
+  - Reliability : [Is this tool generally accurate for this type of data?]
+  - Freshness   : [Are these current results or could they be cached/stale?]
+```
+
+## 1.1 Tool-Specific Parsing Guides
+
+### Nmap Output Analysis
+```
+For each discovered service, extract:
+  □ Port number and protocol (TCP/UDP)
+  □ Service name (what nmap thinks it is)
+  □ Version (exact version string)
+  □ State (open/filtered/closed — filtered is interesting!)
+  □ NSE script output (often contains vulns)
+  □ OS detection results
+  □ Traceroute data (network path info)
+
+Red flags in nmap output:
+  - "tcpwrapped" — service is hiding behind TCP wrapper
+  - Many filtered ports — firewall is active
+  - Unusual ports with known services — deliberate hiding?
+  - Version strings that look custom or modified
+```
+
+### Nuclei Output Analysis
+```
+For each finding, extract:
+  □ Template ID and name
+  □ Severity level
+  □ Matched URL/endpoint
+  □ Matched string/pattern
+  □ Confidence indicator
+  □ CVE reference (if applicable)
+
+Red flags in Nuclei output:
+  - Same template matching every endpoint — likely FP (WAF page)
+  - Info-level findings that reveal versions — feed into CVE matching
+  - "exposure" findings — check if data is actually sensitive
+  - Technology detection — update your tech stack profile
+```
+
+### HTTP Response Analysis
+```
+For each HTTP response, extract:
+  □ Status code and reason
+  □ Response headers (all of them)
+  □ Set-Cookie attributes
+  □ Content-Type and encoding
+  □ Body content (relevant portions)
+  □ Redirect chain (if 3xx)
+  □ Response timing
+
+Red flags in HTTP responses:
+  - Verbose error messages (stack traces, SQL errors)
+  - Internal IP addresses or hostnames leaked
+  - Unexpected headers (X-Debug, X-Backend-Server)
+  - Different response size/timing for similar requests (timing oracle)
+  - Set-Cookie without Secure/HttpOnly/SameSite flags
+```
+
+### Directory Discovery Output Analysis
+```
+For each discovered path, extract:
+  □ Path and status code
+  □ Response size (helps identify unique pages vs default)
+  □ Content type
+  □ Redirect destination (if 3xx)
+  □ Authentication requirement (if 401/403)
+
+Red flags in discovery output:
+  - Admin/management paths (even if 403 — attempt bypass)
+  - Backup/archive files (.bak, .old, .zip, .sql)
+  - Source code or config files (.env, .git, web.config)
+  - API documentation paths (/swagger, /api-docs)
+  - Debug/diagnostic endpoints (/debug, /trace, /health)
+  - Status code anomalies (one path returns 500 — possible injection)
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2: TRUE POSITIVE vs FALSE POSITIVE ASSESSMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+For each potential finding, assess whether it's real:
+
+```
+FINDING TRIAGE
+===============
+Finding: [brief description]
+Source : [which tool reported it]
+
+True Positive Indicators:
+  □ Specific, unique response that matches the vulnerability
+  □ Behavior change when payload is modified
+  □ Consistent reproduction across multiple attempts
+  □ Tool-specific confidence is high
+  □ Matches known vulnerability pattern for this technology
+
+False Positive Indicators:
+  □ Same finding reported for every endpoint (generic match)
+  □ Response is a WAF/CDN error page, not the actual server
+  □ Version-based match but software may be patched (backports)
+  □ Template matches on HTML comment or non-functional context
+  □ No behavioral difference between normal and attack requests
+
+Verdict: [CONFIRMED | PROBABLE | POSSIBLE | LIKELY_FP | FP]
+Confidence: [1-10]
+Action: [Validate further | Report as-is | Investigate deeper | Discard]
+```
+
+## 2.1 False Positive Decision Tree
+
+```
+Is the same finding on every tested endpoint?
+  YES → Almost certainly FP (WAF/CDN generic response)
+  NO  ↓
+
+Does the response contain the actual vulnerable behavior?
+  YES → Likely TP — validate further
+  NO  ↓
+
+Is this a version-based detection only?
+  YES → Check if version is accurate (not just banner)
+        Check if patching without version bump is common
+  NO  ↓
+
+Does the finding require specific conditions that may not exist?
+  YES → Mark as POSSIBLE, note conditions needed
+  NO  ↓
+
+Can you reproduce the finding manually?
+  YES → CONFIRMED
+  NO  → Likely FP — investigate why tool flagged it
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3: SEVERITY ASSESSMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+For confirmed and probable findings, assess severity accurately:
+
+```
+SEVERITY ASSESSMENT
+====================
+Finding: [description]
+
+Impact Analysis:
+  Confidentiality: [None | Low | High] — [explain what data is accessible]
+  Integrity      : [None | Low | High] — [explain what can be modified]
+  Availability   : [None | Low | High] — [explain disruption potential]
+
+Exploitability:
+  Attack Vector  : [Network | Adjacent | Local | Physical]
+  Complexity     : [Low | High] — [are there prerequisites?]
+  Privileges     : [None | Low | High]
+  User Interaction: [None | Required]
+
+Environmental Factors:
+  - Is this internet-facing or internal only?
+  - Is sensitive data involved?
+  - How many users are affected?
+  - Are there compensating controls?
+
+CVSS v3.1: [calculate vector string and score]
+Severity : [Critical | High | Medium | Low | Informational]
+
+Justification:
+  [Why this severity is accurate — not higher, not lower]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 4: FOLLOW-UP ACTION IDENTIFICATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Determine what to do next based on the analysis:
+
+```
+FOLLOW-UP ACTIONS
+==================
+
+Immediate Actions (do now):
+  1. [Action — e.g., "Validate SQL injection with time-based test"]
+  2. [Action — e.g., "Check if admin panel has default credentials"]
+
+Queued Actions (do later this phase):
+  1. [Action — e.g., "Run technology-specific Nuclei templates for Spring"]
+  2. [Action — e.g., "Test IDOR on all user-facing API endpoints"]
+
+Future Phase Actions (flag for later):
+  1. [Action — e.g., "Include in attack chain analysis with SSRF finding"]
+  2. [Action — e.g., "Deep-dive into API during web testing phase"]
+
+Information to Propagate:
+  - [Updated tech stack: discovered Spring Boot 2.5.x]
+  - [New target: internal hostname leaked in error message]
+  - [Scope question: subdomain resolves to third-party IP]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 5: PATTERN RECOGNITION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Look for patterns across findings — individual data points become insights
+when connected:
+
+```
+PATTERN ANALYSIS
+=================
+
+Cross-Finding Patterns:
+  - Are multiple findings related to the same root cause?
+    (e.g., multiple injection points = no input validation framework)
+  - Are findings clustered on specific hosts or applications?
+    (e.g., staging server has more vulns = less security attention)
+  - Do findings follow a technology-specific pattern?
+    (e.g., all Java deserialization points = systemic design issue)
+
+Absence Patterns (what's NOT there):
+  - Expected service that's missing? (might be filtered, not absent)
+  - Common vulnerability not found? (good security or missed test?)
+  - No error messages at all? (aggressive error handling — try harder)
+
+Temporal Patterns:
+  - Response times varying? (could indicate backend differences)
+  - Intermittent results? (load balancer with different configs)
+  - Scan results differ from earlier? (dynamic infrastructure)
+
+Attack Surface Patterns:
+  - Consistent security posture or inconsistent?
+  - Old and new systems mixed? (old = likely weaker)
+  - Different teams managing different parts? (inconsistent config)
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 6: CONNECT TO ATTACK PATTERNS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Map findings to known attack patterns and techniques:
+
+```
+ATTACK PATTERN MAPPING
+=======================
+
+Finding: [description]
+
+Maps to:
+  MITRE ATT&CK : [TXXXX — Technique Name]
+  OWASP Top 10 : [A0X:YYYY — Category]
+  CWE          : [CWE-XXX — Weakness Name]
+
+Known Exploitation Path:
+  [How this vulnerability is typically exploited in the real world]
+
+Chain Potential:
+  This finding + [other finding/condition] could lead to:
+  → [escalated impact description]
+
+Historical Context:
+  [Is this vulnerability type commonly exploited in breaches?
+   Any recent high-profile incidents?]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPLETE ANALYSIS EXAMPLE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## Example: Analyzing Nuclei Output
+
+```
+RAW OUTPUT:
+  [critical] CVE-2021-44228 [apache-log4j-rce] [http]
+    → https://app.example.com/api/login
+  [high] springboot-actuator [exposure] [http]
+    → https://app.example.com/actuator/env
+  [medium] missing-x-frame-options [misconfiguration] [http]
+    → https://app.example.com
+  [info] waf-detect [tech] [http]
+    → https://app.example.com [cloudflare]
+
+ANALYSIS:
+
+1. CVE-2021-44228 (Log4Shell) — NEEDS VALIDATION
+   The target runs Java (Spring Boot confirmed by actuator finding).
+   Log4j RCE is critical if real.  However:
+   - Cloudflare WAF might be triggering on the test payload
+   - Need to verify with a safe payload (DNS-based callback)
+   - If behind Cloudflare, the actual Log4j test might not reach
+     the application
+   Action: Validate with DNS callback payload to confirm execution
+
+2. Spring Boot Actuator Exposure — LIKELY TP
+   Actuator /env endpoint exposed = confirmed Spring Boot.
+   This endpoint leaks environment variables including potential:
+   - Database credentials
+   - API keys
+   - Internal URLs
+   Action: Read actuator/env output, check for sensitive data.
+   Also check: /actuator/health, /actuator/mappings, /actuator/beans
+
+3. Missing X-Frame-Options — TP (LOW SEVERITY)
+   Standard misconfiguration finding.  Low severity unless:
+   - Combined with XSS for clickjacking attack
+   - Sensitive actions on the page (payments, settings)
+   Action: Note for report, low priority
+
+4. Cloudflare WAF Detected — INFORMATIONAL
+   Important context for all other testing:
+   - Reduce scan intensity
+   - Some findings might be WAF-generated FPs
+   - Consider finding origin IP
+   Action: Update assessment context, adjust scanning approach
+
+PATTERN: Java/Spring application behind Cloudflare with exposed
+management endpoints.  This suggests security oversight on the
+application layer despite having WAF protection.
+
+CHAIN POTENTIAL: Actuator env → credentials → deeper access
+                 OR Log4Shell (if real) → immediate RCE
+```
+
+################################################################################
+# END OF FINDING ANALYSIS REASONING TEMPLATE
+################################################################################

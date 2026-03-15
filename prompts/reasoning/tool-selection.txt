@@ -1,0 +1,274 @@
+################################################################################
+#            OSMEDEUS TOOL SELECTION — REASONING TEMPLATE
+#
+#  Purpose : Injected into the brain's context when it needs to select a
+#            tool or technique.  Forces structured decision-making.
+#  Usage   : Referenced by the brain agent during tool-selection decisions.
+#  Version : 1.0.0
+################################################################################
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOOL SELECTION REASONING TEMPLATE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+When you need to choose a tool, technique, or approach, work through this
+reasoning template step by step.  Do not skip steps — each one prevents a
+different class of mistake.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 1: CONTEXT ASSESSMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+First, establish your current context:
+
+```
+CURRENT CONTEXT
+================
+Target        : [target identifier — domain, IP, URL]
+Target Type   : [domain | IP | CIDR | URL | API]
+Phase         : [Recon | Enumeration | Vuln Discovery | Exploitation | Reporting]
+Profile       : [bug-bounty | red-team | recon-only | standard]
+Time Elapsed  : [approximate time spent so far]
+Time Remaining: [estimated time budget remaining]
+
+Previous Findings Summary:
+  - [Key finding 1 and its implications]
+  - [Key finding 2 and its implications]
+  - [Key finding 3 and its implications]
+
+Current Knowledge Gaps:
+  - [What I still don't know #1]
+  - [What I still don't know #2]
+
+Active Constraints:
+  - [WAF/CDN detected? Rate limiting? Stealth required?]
+  - [Scope limitations?]
+  - [Tool availability?]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2: INFORMATION NEED ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Define precisely what information you need:
+
+```
+INFORMATION NEED
+=================
+Question       : [What specific question am I trying to answer?]
+Data Type      : [Subdomains | Ports | Versions | Vulns | Config | Content]
+Precision Needed: [Exact version number | General category | Boolean yes/no]
+Coverage Needed : [Exhaustive (find everything) | Representative (find enough)]
+
+Why This Matters:
+  [How will this information advance the assessment?  What decisions
+   depend on it?]
+
+What Would Change My Plan:
+  - If I find [X], then I should [action A]
+  - If I find [Y], then I should [action B]
+  - If I find nothing, then [action C]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3: TOOL EVALUATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Evaluate candidate tools against the information need:
+
+```
+TOOL EVALUATION
+================
+
+Candidate 1: [tool name]
+  Capability  : [What it does well]
+  Speed       : [Fast / Medium / Slow]
+  Accuracy    : [High / Medium / Low — false positive rate?]
+  Noise Level : [Stealthy / Moderate / Noisy]
+  Coverage    : [How much of my information need does it address?]
+  Limitations : [What it can't do or does poorly]
+  Fit Score   : [1-10]
+
+Candidate 2: [tool name]
+  [same evaluation]
+
+Candidate 3: [tool name]
+  [same evaluation]
+```
+
+## 3.1 Tool Comparison Matrix
+
+Use this reference for common tool trade-offs:
+
+```
+Category: Subdomain Enumeration
+  subfinder   — Fast, passive, good API integration      [Speed:5, Depth:3]
+  amass       — Thorough, slow, graph analysis           [Speed:2, Depth:5]
+  crt.sh      — Passive, CT logs only, instant           [Speed:5, Depth:2]
+  DNS brute   — Active, catches unique names, slow       [Speed:1, Depth:4]
+
+Category: Port Scanning
+  nmap -sV    — Accurate versioning, moderate speed      [Speed:3, Depth:5]
+  masscan     — Extremely fast, no versioning            [Speed:5, Depth:1]
+  nmap top100 — Quick overview, limited coverage         [Speed:4, Depth:2]
+  nmap -p-    — Full coverage, very slow for large scope [Speed:1, Depth:5]
+
+Category: Web Content Discovery
+  ffuf        — Very fast, flexible, manual setup        [Speed:5, Depth:3]
+  feroxbuster — Recursive, automatic, thorough           [Speed:3, Depth:5]
+  gobuster    — Simple, fast, basic                      [Speed:4, Depth:2]
+
+Category: Vulnerability Scanning
+  nuclei      — Template-based, high coverage, fast      [Speed:4, Depth:4]
+  nmap scripts— Service-specific, built-in, reliable     [Speed:3, Depth:3]
+  manual test — Precise, finds logic bugs, slow          [Speed:1, Depth:5]
+
+Category: HTTP Testing
+  curl        — Precise control, single request          [Speed:5, Depth:1]
+  http_request— In-agent, no shell needed                [Speed:5, Depth:1]
+  httpx       — Bulk probing, tech detection             [Speed:4, Depth:3]
+  ffuf        — Parameter fuzzing, wordlist-based        [Speed:4, Depth:4]
+
+Category: Data Processing
+  jq          — JSON manipulation, fast                  [Speed:5, Depth:3]
+  grep_regex  — Pattern matching in files                [Speed:5, Depth:2]
+  exec_python — Complex analysis, unlimited flexibility  [Speed:3, Depth:5]
+  bash pipes  — Simple transformations                   [Speed:4, Depth:3]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 4: TRADE-OFF ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Explicitly consider the trade-offs:
+
+```
+TRADE-OFF ANALYSIS
+===================
+
+Speed vs Depth:
+  - Do I need results quickly to unblock other work?     → Favor speed
+  - Is this a critical area that needs thorough coverage? → Favor depth
+  - Can I do a quick scan now and deep scan later?       → Phased approach
+
+Stealth vs Coverage:
+  - Is the profile red-team (stealth priority)?          → Minimal probes
+  - Is the target WAF-protected?                         → Low rate, targeted
+  - Is speed more important than stealth?                → Parallel scanning
+
+Automation vs Manual:
+  - Is this a well-known vulnerability class?            → Automated scan
+  - Does this require creative/lateral thinking?         → Manual testing
+  - Is the target custom-built?                          → Manual + targeted auto
+
+Delegation vs Direct:
+  - Is this a focused, bounded task?                     → Delegate to sub-agent
+  - Does this require big-picture context?               → Do it yourself
+  - Can this run in parallel with other tasks?           → Delegate
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 5: DECISION AND CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Make your decision and specify the exact configuration:
+
+```
+DECISION
+=========
+Selected Tool   : [tool name]
+Justification   : [1-2 sentences on why this is the best choice right now]
+
+Configuration:
+  Command/Call  : [exact command or tool call with all parameters]
+  Rate Limit    : [requests per second, if applicable]
+  Timeout       : [expected completion time]
+  Output        : [where results will be saved/how they'll be processed]
+
+Fallback Plan:
+  If this fails : [what to try next and why]
+  If this is slow: [alternative approach]
+  If results are empty: [next diagnostic step]
+
+Success Criteria:
+  - [What constitutes a useful result?]
+  - [Minimum data quality threshold]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 6: POST-EXECUTION ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+After the tool runs, analyze the results before proceeding:
+
+```
+POST-EXECUTION ANALYSIS
+=========================
+Results Summary : [Brief summary of what was returned]
+Quality Check   : [Are these results reliable? Any signs of FP/FN?]
+New Information : [What did I learn that I didn't know before?]
+Anomalies       : [Anything unexpected or unusual?]
+Plan Impact     : [Does this change my assessment plan?]
+Next Action     : [What should I do with these results?]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMMON DECISION PATTERNS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## Pattern: First Contact with a New Target
+
+```
+I know nothing about this target yet.
+  → Start with passive recon (subfinder + crt.sh + WHOIS)
+  → Then quick port scan (nmap --top-ports 100)
+  → Then HTTP probing (httpx on discovered hosts)
+  → Results will determine the next phase
+```
+
+## Pattern: WAF/CDN Detected
+
+```
+The target is behind Cloudflare/Akamai/etc.
+  → Reduce scanning intensity immediately
+  → Try to find the origin IP (DNS history, email headers, subdomains)
+  → Focus on application-level testing (injections, logic bugs)
+  → Avoid brute-force approaches (will be blocked)
+  → Use targeted Nuclei templates instead of broad sweeps
+```
+
+## Pattern: Large Scope, Limited Time
+
+```
+Many targets, not enough time to test everything deeply.
+  → Run broad but fast scans on everything (httpx + nuclei critical)
+  → Identify highest-value targets (admin panels, APIs, old software)
+  → Deep-dive only on top 5-10 targets
+  → Delegate parallel tasks to sub-agents
+```
+
+## Pattern: Nothing Found Yet
+
+```
+Multiple scans returned no interesting results.
+  → Question assumptions: Is the target up? Is the scope correct?
+  → Try different tools for the same purpose
+  → Look at the problem from a different angle (OSINT, social)
+  → Check if tools are being blocked (WAF, rate limiting, geo-block)
+  → Sometimes a well-defended target is itself a finding worth noting
+```
+
+## Pattern: Too Many Results
+
+```
+A scan returned hundreds of findings.
+  → Don't try to validate everything manually
+  → Filter by severity (Critical + High first)
+  → Group by vulnerability type (one validation per type)
+  → Use confidence scores to prioritize
+  → Sample-validate from each category, then extrapolate
+```
+
+################################################################################
+# END OF TOOL SELECTION REASONING TEMPLATE
+################################################################################

@@ -1,0 +1,77 @@
+name: port-scan
+kind: module
+desc: Port discovery with masscan and detailed service detection with nmap
+tags: recon, port, nmap, masscan
+
+params:
+  - name: rate_limit
+    value: "1000"
+  - name: nmap_threads
+    value: "25"
+  - name: ports
+    value: "1-10000"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/recon/ports
+      - mkdir -p {{Output}}/recon/services
+    exports:
+      ports_dir: "{{Output}}/recon/ports"
+      services_dir: "{{Output}}/recon/services"
+
+  - name: masscan-discovery
+    type: bash
+    command: >
+      {{Binaries}}/masscan {{Target}} -p{{ports}}
+      --rate={{rate_limit}}
+      --open-only
+      -oL {{Output}}/recon/ports/masscan-raw.txt
+    timeout: 3600
+    on_error: continue
+
+  - name: parse-masscan
+    type: bash
+    command: |
+      grep '^open' {{Output}}/recon/ports/masscan-raw.txt 2>/dev/null \
+        | awk '{print $3}' | sort -un > {{Output}}/recon/ports/open-ports.txt
+      paste -sd',' {{Output}}/recon/ports/open-ports.txt > {{Output}}/recon/ports/port-list.txt
+    exports:
+      open_ports: "{{Output}}/recon/ports/open-ports.txt"
+      port_csv: "{{Output}}/recon/ports/port-list.txt"
+
+  - name: nmap-service-scan
+    type: bash
+    pre_condition: "file_exists('{{Output}}/recon/ports/port-list.txt')"
+    command: >
+      {{Binaries}}/nmap -sV -sC
+      -p $(cat {{Output}}/recon/ports/port-list.txt)
+      --min-rate {{nmap_threads}}
+      -oN {{Output}}/recon/services/nmap-services.txt
+      -oX {{Output}}/recon/services/nmap-services.xml
+      {{Target}}
+    timeout: 3600
+    exports:
+      service_info: "{{Output}}/recon/services/nmap-services.txt"
+
+  - name: nmap-version-scripts
+    type: bash
+    pre_condition: "file_exists('{{Output}}/recon/ports/port-list.txt')"
+    command: >
+      {{Binaries}}/nmap --script=default,version
+      -sV --version-intensity 7
+      -p $(cat {{Output}}/recon/ports/port-list.txt)
+      -oN {{Output}}/recon/services/nmap-version-detail.txt
+      -oX {{Output}}/recon/services/nmap-version-detail.xml
+      {{Target}}
+    timeout: 3600
+    on_error: continue
+
+  - name: convert-nmap-results
+    type: function
+    function: 'nmap_to_jsonl("{{Output}}/recon/services/nmap-services.xml", "{{Output}}/recon/services/nmap-services.jsonl")'
+    on_error: continue
+    exports:
+      open_ports: "{{Output}}/recon/ports/open-ports.txt"
+      service_info: "{{Output}}/recon/services/nmap-services.txt"

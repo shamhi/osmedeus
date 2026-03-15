@@ -1,0 +1,65 @@
+name: http-probe
+kind: module
+desc: Probe subdomains for live HTTP/HTTPS services with technology fingerprinting
+tags: recon, http, httpx, fingerprint
+
+params:
+  - name: inputFile
+    value: "{{Output}}/recon/subdomains/all-subdomains.txt"
+  - name: httpThreads
+    value: "50"
+  - name: httpTimeout
+    value: "10"
+  - name: defaultUA
+    value: "User-Agent: Mozilla/5.0 (compatible; Osmedeus/v4; +https://github.com/j3ssie/osmedeus)"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/recon/http
+      - mkdir -p {{Output}}/recon/http/raw-responses
+    exports:
+      http_dir: "{{Output}}/recon/http"
+
+  - name: httpx-probe
+    type: bash
+    command: >
+      cat {{inputFile}} | {{Binaries}}/httpx
+      -H '{{defaultUA}}'
+      -timeout {{httpTimeout}}
+      -t {{httpThreads}}
+      -silent
+      -no-color
+      -no-fallback
+      -status-code
+      -title
+      -tech-detect
+      -cdn
+      -json
+      -follow-host-redirects
+      -store-response
+      -store-response-dir {{Output}}/recon/http/raw-responses
+      -o {{Output}}/recon/http/httpx-full.json
+    timeout: 1800
+    exports:
+      http_responses: "{{Output}}/recon/http/httpx-full.json"
+
+  - name: extract-live-hosts
+    type: bash
+    command: |
+      cat {{Output}}/recon/http/httpx-full.json 2>/dev/null \
+        | jq -r '.url' | sort -u > {{Output}}/recon/http/live-hosts.txt
+    exports:
+      live_hosts: "{{Output}}/recon/http/live-hosts.txt"
+
+  - name: extract-summary
+    type: bash
+    command: |
+      cat {{Output}}/recon/http/httpx-full.json 2>/dev/null \
+        | jq -r '[.url, (.status_code|tostring), .title, (.technologies // [] | join(","))] | @tsv' \
+        > {{Output}}/recon/http/http-summary.tsv
+    on_error: continue
+    exports:
+      live_hosts: "{{Output}}/recon/http/live-hosts.txt"
+      http_responses: "{{Output}}/recon/http/httpx-full.json"

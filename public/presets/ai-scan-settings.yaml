@@ -1,0 +1,260 @@
+# =============================================================================
+# Osmedeus AI Scan Settings
+# =============================================================================
+# Pre-configured settings optimized for AI-driven security scanning.
+# Copy to ~/osmedeus-base/osm-settings.yaml or merge with your existing config.
+#
+# Quick start:
+#   export OPENAI_API_KEY=sk-xxx
+#   cp public/presets/ai-scan-settings.yaml ~/osmedeus-base/osm-settings.yaml
+#   osmedeus run -f ai-scan -t target.com
+
+# =============================================================================
+# Base Folder
+# =============================================================================
+base_folder: $HOME/osmedeus-base
+
+# =============================================================================
+# Environment Paths
+# =============================================================================
+environments:
+  external_binaries_path: "{{base_folder}}/external-binaries"
+  external_data: "{{base_folder}}/external-data"
+  external_configs: "{{base_folder}}/external-configs"
+  workspaces: "$HOME/workspaces-osmedeus"
+  workflows: "{{base_folder}}/workflows"
+  snapshot: "{{base_folder}}/snapshot"
+  markdown_report_templates: "{{base_folder}}/markdown-report-templates"
+
+  # Agent configuration directory — stores brain prompts, profiles, and
+  # custom reasoning templates used by the AI scanner.
+  external_agent_configs: "{{base_folder}}/external-agent-configs"
+
+  external_scripts: "{{base_folder}}/external-scripts"
+
+# =============================================================================
+# Database
+# =============================================================================
+# SQLite is fine for single-node AI scanning. Switch to PostgreSQL for
+# distributed setups or when you need concurrent write performance.
+database:
+  db_engine: sqlite
+  db_path: "{{base_folder}}/database-osm.sqlite"
+  connection_timeout: 60
+
+# =============================================================================
+# Server (REST API)
+# =============================================================================
+server:
+  host: "0.0.0.0"
+  port: 8002
+  ui_path: "{{base_folder}}/ui/"
+  workspace_prefix_key: ""
+
+  simple_user_map_key:
+    osmedeus: osmedeus-admin
+
+  jwt:
+    # IMPORTANT: Change this in production!
+    secret_signing_key: change-this-secret-in-production
+    expiration_minutes: 180
+
+  license: "open-source"
+  enable_metrics: true
+  cors_allowed_origins: "reflect-origin"
+  enabled_auth_api: false
+  auth_api_key: ""
+  enable_trigger_via_webhook: false
+
+# =============================================================================
+# Scan Tactic — Thread Counts
+# =============================================================================
+# AI scanning benefits from moderate concurrency. The brain agent coordinates
+# tool execution, so per-tool threads don't need to be as high as a brute-force
+# pipeline. Lower values also reduce the risk of triggering WAF rate limits.
+scan_tactic:
+  # Fast / aggressive — used with --tactic aggressive
+  aggressive: 30
+
+  # Default — balanced for AI-guided scanning
+  default: 10
+
+  # Gentle / thorough — used with --tactic gently
+  # Good for stealthy red-team profiles
+  gently: 3
+
+# =============================================================================
+# Redis (Optional — required for distributed scanning)
+# =============================================================================
+redis:
+  host: ""
+  port: 6379
+  username: ""
+  password: ""
+  db: 0
+  connection_timeout: 60
+
+# =============================================================================
+# Global Variables — API Keys for Recon Tools
+# =============================================================================
+# The brain agent uses these keys when it calls subdomain enumeration, port
+# scanning, and OSINT tools. Fill in the ones you have; the agent adapts its
+# strategy based on which sources are available.
+global_vars:
+  # GitHub — used by trufflehog, gitrob, subdomain scraping
+  GITHUB_API_KEY:
+    value: ""
+    as_env: true
+
+  # Shodan — passive port/service data, avoids active scanning
+  SHODAN_API_KEY:
+    value: ""
+    as_env: true
+
+  # Censys — certificate and host search
+  CENSYS_API_KEY:
+    value: ""
+    as_env: true
+
+  # PassiveTotal — passive DNS and WHOIS enrichment
+  PASSIVETOTAL_API_KEY:
+    value: ""
+    as_env: true
+
+  # OpenAI — primary LLM provider for the brain agent
+  # Can also be set via the OPENAI_API_KEY environment variable
+  OPENAI_API_KEY:
+    value: ""
+    as_env: true
+
+# =============================================================================
+# Notification
+# =============================================================================
+notification:
+  provider: telegram
+  enabled: false
+
+  telegram:
+    bot_token: ""
+    chat_id: 0
+    enabled: false
+    telegram_channel_map: {}
+
+  webhooks: []
+
+# =============================================================================
+# Cloud Storage (Optional)
+# =============================================================================
+storage:
+  provider: s3
+  endpoint: ""
+  access_key_id: ""
+  secret_access_key: ""
+  bucket: ""
+  region: us-east-1
+  account_id: ""
+  use_ssl: true
+  path_style: false
+  presign_expiry: "1h"
+  enabled: false
+
+# =============================================================================
+# Cloud Infrastructure (Optional)
+# =============================================================================
+cloud:
+  cloud_path: "{{base_folder}}/cloud"
+  cloud_settings: "{{base_folder}}/cloud/cloud-settings.yaml"
+  enabled: false
+
+# =============================================================================
+# LLM Configuration — Primary AI Scanner Settings
+# =============================================================================
+# This is the core configuration that powers the brain agent. The brain uses
+# tool calling to execute security modules, delegate to sub-agents, and reason
+# about findings.
+#
+# Provider rotation: providers are tried in order. If the primary provider
+# returns an error or hits a rate limit, the next provider is used automatically.
+llm_config:
+  # --- Provider List (tried in order) ---
+  llm_providers:
+    # Primary: OpenAI GPT-4.1 — best balance of reasoning and tool calling
+    - provider: openai
+      base_url: "https://api.openai.com/v1/chat/completions"
+      # Auth token: reads from OPENAI_API_KEY env var if left empty here
+      auth_token: ""
+      model: "gpt-4.1"
+
+    # Fallback: o4-mini — faster and cheaper, still strong at tool calling
+    - provider: openai
+      base_url: "https://api.openai.com/v1/chat/completions"
+      auth_token: ""
+      model: "o4-mini"
+
+    # Alternative: Ollama (local) — no API costs, requires local GPU
+    # Uncomment to add as a tertiary fallback:
+    # - provider: ollama
+    #   base_url: "http://localhost:11434/v1/chat/completions"
+    #   auth_token: ""
+    #   model: "llama3:70b"
+
+    # Alternative: Anthropic Claude — strong reasoning, good for complex chains
+    # Uncomment to add:
+    # - provider: anthropic
+    #   base_url: "https://api.anthropic.com/v1/messages"
+    #   auth_token: ""
+    #   model: "claude-sonnet-4-20250514"
+
+  # --- Tool Calling ---
+  # Required for AI scanning. The brain agent uses tool calls to invoke
+  # security modules (nmap, nuclei, ffuf, etc.) and delegate to sub-agents.
+  enabled_tool_call: true
+
+  # --- Generation Parameters ---
+  # max_tokens: Upper bound on generated tokens per LLM call.
+  # 4096 gives the brain enough room for detailed reasoning, multi-step plans,
+  # and structured output (attack surface maps, finding reports).
+  max_tokens: 4096
+
+  # temperature: Controls randomness. Lower = more deterministic.
+  # 0.3 is ideal for security work: consistent tool selection, reproducible
+  # reasoning, while still allowing creative attack-path discovery.
+  temperature: 0.3
+
+  # top_k / top_p: Nucleus sampling parameters.
+  # Slightly restricted to keep outputs focused and relevant.
+  top_k: 40
+  top_p: 0.85
+
+  # n: Number of completions per request. Always 1 for tool-calling workflows.
+  n: 1
+
+  # --- Reliability ---
+  # max_retries: Retries on transient API errors (rate limits, 5xx).
+  # 5 retries with exponential backoff keeps long-running scans resilient.
+  max_retries: 5
+
+  # timeout: Per-request timeout. The brain sometimes generates long plans
+  # or processes large tool outputs, so 180s gives adequate headroom.
+  timeout: 180s
+
+  # --- Streaming ---
+  # Streaming is disabled for tool-calling workflows. The executor needs the
+  # complete response (including tool_calls JSON) before dispatching actions.
+  stream: false
+
+  # --- Structured Output ---
+  # Enable when you need the brain to return JSON conforming to output_schema.
+  # Leave false for general scanning — the brain formats its own reports.
+  structured_json_format: false
+
+  # --- System Prompt ---
+  # Leave empty to use the default brain prompt from prompts/brain/hacker-brain.txt.
+  # Override here only if you need a fully custom system prompt.
+  system_prompt: ""
+
+  # --- Custom Headers ---
+  # Additional HTTP headers sent with every LLM API request.
+  # Useful for proxy authentication, org-id headers, etc.
+  # Format: "Header1: value1\nHeader2: value2"
+  custom_headers: ""

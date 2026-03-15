@@ -1,0 +1,98 @@
+name: generate-report
+kind: module
+desc: AI-powered security report generation from all scan outputs
+tags: report, agent, llm, summary
+
+params:
+  - name: output_dir
+    value: "{{Output}}"
+  - name: max_iterations
+    value: "15"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/reports
+      - mkdir -p {{Output}}/reports/evidence
+    exports:
+      reports_dir: "{{Output}}/reports"
+
+  - name: generate-security-report
+    type: agent
+    query: |
+      You are a senior penetration tester writing a professional security assessment report for target: {{Target}}.
+
+      Scan data is located under {{Output}}/. Thoroughly read the available scan outputs to compile findings:
+
+      1. Recon data: {{Output}}/recon/ (subdomains, ports, HTTP responses, DNS records)
+      2. Vulnerability data: {{Output}}/vulns/ (nuclei, SSL, fuzzing, SQLi findings)
+      3. Network data: {{Output}}/network/ (service enumeration, SMB audit)
+
+      Generate a comprehensive Markdown report at {{Output}}/reports/security-assessment.md with these sections:
+
+      ## Executive Summary
+      - Brief overview of scope, methodology, and key risk findings
+      - Overall risk rating (Critical/High/Medium/Low)
+
+      ## Scope & Methodology
+      - Target information and scan date
+      - Tools and techniques used
+
+      ## Attack Surface Summary
+      - Subdomains discovered (count and notable ones)
+      - Open ports and services
+      - Web technologies detected
+
+      ## Findings by Severity
+      For each finding include:
+      - Title and severity (Critical/High/Medium/Low/Info)
+      - Affected host(s) and endpoint(s)
+      - Description and evidence (quote raw tool output)
+      - CVSS score if applicable
+      - Remediation recommendation
+
+      ### Critical Findings
+      ### High Findings
+      ### Medium Findings
+      ### Low / Informational Findings
+
+      ## SSL/TLS Assessment
+      - Certificate issues, weak ciphers, protocol vulnerabilities
+
+      ## Network Services Assessment
+      - Exposed services, default credentials, SMB findings
+
+      ## Remediation Summary
+      - Prioritized table of all findings with recommended fixes
+
+      Be thorough and professional. Include actual data from the scan files as evidence.
+    system_prompt: "You are a senior security consultant specializing in penetration testing reports. Write clear, actionable, and evidence-based findings. Use a professional tone suitable for both technical and executive audiences."
+    max_iterations: 15
+    agent_tools:
+      - preset: bash
+      - preset: read_file
+      - preset: read_lines
+      - preset: file_exists
+      - preset: file_length
+      - preset: glob
+      - preset: grep_string
+      - preset: save_content
+    memory:
+      max_messages: 50
+      persist_path: "{{Output}}/reports/agent-conversation.json"
+    exports:
+      final_report: "{{agent_content}}"
+
+  - name: verify-report
+    type: bash
+    command: |
+      if [ -f {{Output}}/reports/security-assessment.md ]; then
+        echo "Report generated successfully: $(wc -l < {{Output}}/reports/security-assessment.md) lines"
+      else
+        echo "WARNING: Report file not found at expected path"
+        # Fallback: save agent content directly
+        echo "{{final_report}}" > {{Output}}/reports/security-assessment.md 2>/dev/null
+      fi
+    exports:
+      final_report: "{{Output}}/reports/security-assessment.md"

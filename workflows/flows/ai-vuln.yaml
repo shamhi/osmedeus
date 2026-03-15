@@ -1,0 +1,84 @@
+# =============================================================================
+# AI Vulnerability Assessment Flow
+# =============================================================================
+# Hybrid approach: runs conventional recon modules first (fast, reliable),
+# then hands off to the brain controller for intelligent vulnerability
+# discovery and analysis on the pre-populated data.
+#
+# This flow is useful when you want deterministic recon (known-good tooling)
+# combined with AI-driven vulnerability hunting.
+#
+# Usage:
+#   osmedeus run -f ai-vuln -t example.com
+#   osmedeus run -f ai-vuln -t example.com -P params.yaml
+
+name: ai-vuln
+kind: flow
+description: Hybrid AI vulnerability assessment — conventional recon, then AI-driven vuln hunting
+tags: ai, vuln, brain, hybrid, assessment
+
+params:
+  - name: profile
+    value: "bug-bounty"
+  - name: max_iterations
+    value: "40"
+  - name: threads
+    value: "20"
+  - name: timeout
+    value: "10800"
+
+modules:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Stage 1: Subdomain Enumeration (conventional)
+  # Fast, deterministic subdomain discovery using subfinder and amass.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: subdomain-enumeration
+    path: modules/recon/subdomain-enum.yaml
+    params:
+      threads: "{{threads}}"
+    condition: "true"
+    exports:
+      all_subdomains: "{{Output}}/recon/subdomains/all-subdomains.txt"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Stage 2: HTTP Probing (conventional)
+  # Probe discovered subdomains for live HTTP/HTTPS services.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: http-probing
+    path: modules/recon/http-probe.yaml
+    depends_on:
+      - subdomain-enumeration
+    params:
+      inputFile: "{{Output}}/recon/subdomains/all-subdomains.txt"
+      httpThreads: "{{threads}}"
+    condition: "file_length('{{Output}}/recon/subdomains/all-subdomains.txt') > 0"
+    exports:
+      live_hosts: "{{Output}}/recon/http/live-hosts.txt"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Stage 3: Brain Controller — AI Vulnerability Hunter
+  # Receives pre-populated recon data and focuses on vuln discovery.
+  # The agent can read the existing recon output and plan its attack
+  # strategy based on discovered services and technologies.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: brain-controller
+    path: modules/brain/controller.yaml
+    depends_on:
+      - http-probing
+    params:
+      profile: "{{profile}}"
+      max_iterations: "{{max_iterations}}"
+      threads: "{{threads}}"
+      timeout: "{{timeout}}"
+      recon_data: "{{Output}}/recon"
+    condition: "file_length('{{Output}}/recon/http/live-hosts.txt') > 0"
+    on_success:
+      - action: log
+        message: "AI vulnerability assessment completed for {{Target}}"
+      - action: notify
+        notify: "AI vuln scan finished for {{Target}} — findings in {{Output}}"
+    on_error:
+      - action: log
+        message: "AI vulnerability assessment failed for {{Target}}"
+      - action: continue
+        message: "Brain controller stopped — partial results may be available"

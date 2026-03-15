@@ -1,0 +1,78 @@
+name: ssl-audit
+kind: module
+desc: Comprehensive SSL/TLS audit using testssl.sh and sslyze
+tags: vuln, ssl, tls, testssl, sslyze
+
+params:
+  - name: inputFile
+    value: "{{Output}}/recon/http/live-hosts.txt"
+  - name: sslThreads
+    value: "10"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/vulns/ssl/testssl
+      - mkdir -p {{Output}}/vulns/ssl/sslyze
+    exports:
+      ssl_dir: "{{Output}}/vulns/ssl"
+
+  - name: extract-https-hosts
+    type: bash
+    command: |
+      grep -i '^https://' {{inputFile}} 2>/dev/null \
+        | sed 's|https://||;s|/.*||' | sort -u > {{Output}}/vulns/ssl/https-hosts.txt
+      if [ ! -s {{Output}}/vulns/ssl/https-hosts.txt ]; then
+        echo "{{Target}}" > {{Output}}/vulns/ssl/https-hosts.txt
+      fi
+    exports:
+      https_hosts: "{{Output}}/vulns/ssl/https-hosts.txt"
+
+  - name: testssl-scan
+    type: foreach
+    input: "{{Output}}/vulns/ssl/https-hosts.txt"
+    variable: ssl_host
+    threads: "{{sslThreads}}"
+    step:
+      name: run-testssl
+      type: bash
+      command: >
+        {{Binaries}}/testssl --quiet --color 0
+        --jsonfile {{Output}}/vulns/ssl/testssl/[[ssl_host]].json
+        --csvfile {{Output}}/vulns/ssl/testssl/[[ssl_host]].csv
+        --warnings off
+        [[ssl_host]]
+      timeout: 300
+      on_error: continue
+
+  - name: sslyze-scan
+    type: bash
+    command: >
+      {{Binaries}}/sslyze
+      --targets_in={{Output}}/vulns/ssl/https-hosts.txt
+      --json_out={{Output}}/vulns/ssl/sslyze/sslyze-results.json
+      --heartbleed
+      --robot
+      --certinfo
+      --reneg
+      --compression
+      --quiet
+    timeout: 1800
+    on_error: continue
+
+  - name: merge-ssl-findings
+    type: bash
+    command: |
+      > {{Output}}/vulns/ssl/ssl-findings.txt
+      echo "=== testssl.sh Findings ===" >> {{Output}}/vulns/ssl/ssl-findings.txt
+      for f in {{Output}}/vulns/ssl/testssl/*.csv; do
+        [ -f "$f" ] && grep -iE 'VULNERABLE|NOT ok|WARN|HIGH|CRITICAL' "$f" >> {{Output}}/vulns/ssl/ssl-findings.txt 2>/dev/null
+      done
+      echo "" >> {{Output}}/vulns/ssl/ssl-findings.txt
+      echo "=== sslyze Findings ===" >> {{Output}}/vulns/ssl/ssl-findings.txt
+      cat {{Output}}/vulns/ssl/sslyze/sslyze-results.json 2>/dev/null \
+        | jq -r '.server_scan_results[]? | {host: .server_location.hostname, checks: .scan_result}' \
+        >> {{Output}}/vulns/ssl/ssl-findings.txt 2>/dev/null
+    exports:
+      ssl_findings: "{{Output}}/vulns/ssl/ssl-findings.txt"

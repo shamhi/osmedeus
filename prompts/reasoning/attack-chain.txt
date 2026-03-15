@@ -1,0 +1,335 @@
+################################################################################
+#            OSMEDEUS ATTACK CHAIN — REASONING TEMPLATE
+#
+#  Purpose : Injected when the brain needs to evaluate multi-step attack
+#            paths.  Forces structured chain analysis and impact assessment.
+#  Usage   : Referenced during exploitation validation and reporting phases.
+#  Version : 1.0.0
+################################################################################
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ATTACK CHAIN REASONING TEMPLATE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Individual vulnerabilities tell part of the story.  Attack chains reveal the
+real risk.  This template forces you to think like an attacker who chains
+findings for maximum impact.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 1: INVENTORY ALL CONFIRMED FINDINGS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+List all confirmed and probable findings with their capabilities:
+
+```
+FINDING INVENTORY
+==================
+
+ID    | Finding                    | Provides              | Requires
+------|----------------------------|-----------------------|------------------
+F-001 | [description]              | [what access/info]    | [what conditions]
+F-002 | [description]              | [what access/info]    | [what conditions]
+F-003 | [description]              | [what access/info]    | [what conditions]
+...
+
+Capability Categories:
+  [I] Information Disclosure — provides data useful for other attacks
+  [A] Access               — provides access to a system or account
+  [E] Execution            — allows running commands or code
+  [M] Manipulation         — allows modifying data or state
+  [P] Privilege            — provides elevated access or capabilities
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 2: MAP TO MITRE ATT&CK
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Map each finding to MITRE ATT&CK techniques to identify the kill chain:
+
+```
+MITRE ATT&CK MAPPING
+======================
+
+Tactic               | Technique              | Finding  | Notes
+---------------------|------------------------|----------|------------------
+Reconnaissance       | T1595 Active Scanning  | F-001    | [how it maps]
+Initial Access       | T1190 Exploit Public   | F-003    | [how it maps]
+Execution            | T1059 Command/Script   | F-005    | [how it maps]
+Persistence          |                        |          | [gap — no finding]
+Privilege Escalation | T1068 Exploitation     | F-007    | [how it maps]
+Defense Evasion      |                        |          | [gap — no finding]
+Credential Access    | T1552 Unsecured Creds  | F-002    | [how it maps]
+Discovery            | T1046 Network Service  | F-001    | [how it maps]
+Lateral Movement     | T1021 Remote Services  | F-004    | [how it maps]
+Collection           |                        |          | [gap — no finding]
+Exfiltration         | T1041 Exfil Over C2    | F-006    | [possible path]
+Impact               | T1485 Data Destruction |          | [not attempted]
+
+Kill Chain Coverage:
+  [Which stages of the kill chain are covered by findings?]
+  [Which stages have gaps? These gaps limit chain completeness.]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 3: IDENTIFY CHAINING OPPORTUNITIES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+For each finding, ask: "What can I reach from here?"
+
+```
+CHAIN OPPORTUNITY ANALYSIS
+============================
+
+Starting Point: [Finding F-XXX]
+  This finding provides: [capability]
+  
+  Can chain to:
+    → F-YYY because [explanation of how F-XXX enables F-YYY]
+    → F-ZZZ because [explanation]
+  
+  Cannot chain to:
+    → F-AAA because [what's missing — e.g., "requires auth I don't have"]
+
+[Repeat for each finding that provides a capability]
+```
+
+## 3.1 Common Chain Patterns to Look For
+
+```
+Pattern: Info Leak → Credential Access → Full Compromise
+  Finding A: Information disclosure (internal IPs, usernames, versions)
+  Finding B: Credential exposure (hardcoded creds, weak passwords)
+  Finding C: Service access using discovered credentials
+  Impact escalation: Info (Low) → Creds (Medium) → Access (Critical)
+
+Pattern: SSRF → Internal Service → Data/RCE
+  Finding A: SSRF in web application
+  Finding B: Internal service with no auth (Redis, metadata, admin panel)
+  Finding C: Ability to read data or execute commands via internal service
+  Impact escalation: SSRF (Medium) → Internal (High) → RCE (Critical)
+
+Pattern: XSS → Session Theft → Account Takeover
+  Finding A: Stored XSS in user-controlled content
+  Finding B: Session cookies without HttpOnly flag
+  Finding C: Session hijacking of other users (including admins)
+  Impact escalation: XSS (Medium) → Session (High) → Admin (Critical)
+
+Pattern: Auth Bypass → Privilege Escalation → Data Access
+  Finding A: Authentication bypass on specific endpoint
+  Finding B: Privilege escalation via parameter manipulation
+  Finding C: Access to sensitive data with elevated privileges
+  Impact escalation: Bypass (High) → Escalation (High) → Data (Critical)
+
+Pattern: Subdomain Takeover → Cookie Scoping → Session Hijack
+  Finding A: Dangling CNAME (subdomain takeover possible)
+  Finding B: Cookies scoped to parent domain (not specific subdomain)
+  Finding C: Attacker controls subdomain, can read parent domain cookies
+  Impact escalation: Takeover (Medium) → Cookie (Medium) → Hijack (Critical)
+
+Pattern: Open Redirect → OAuth Flow → Token Theft
+  Finding A: Open redirect on OAuth client domain
+  Finding B: Redirect_uri validation allows the open redirect URL
+  Finding C: Authorization code/token sent to attacker via redirect
+  Impact escalation: Redirect (Low) → OAuth (High) → Token (Critical)
+
+Pattern: File Read → Source Code → Hardcoded Secrets → Access
+  Finding A: Local file read (LFI, path traversal)
+  Finding B: Application source code accessible
+  Finding C: Hardcoded credentials in source code
+  Finding D: Credentials work on production services
+  Impact escalation: LFI (High) → Source (High) → Creds (Critical)
+
+Pattern: API IDOR → Mass Data Access → PII Exposure
+  Finding A: IDOR on user data API endpoint
+  Finding B: Sequential/predictable user IDs
+  Finding C: Automated enumeration of all user records
+  Impact escalation: IDOR (Medium) → Enumeration (High) → PII (Critical)
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 4: BUILD ATTACK CHAINS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+For each identified chain opportunity, build the full attack narrative:
+
+```
+ATTACK CHAIN #[N]
+==================
+Name: [Descriptive name — e.g., "Cloud Infrastructure Compromise via SSRF"]
+
+Steps:
+  Step 1: [Finding ID] — [Action taken]
+    Technique: [MITRE TXXXX]
+    Input    : [What is needed to start]
+    Output   : [What is gained]
+    Evidence : [How confirmed]
+
+  Step 2: [Finding ID] — [Action taken]
+    Technique: [MITRE TXXXX]
+    Input    : [Output from Step 1]
+    Output   : [What is gained]
+    Evidence : [How confirmed]
+
+  Step 3: [Finding ID] — [Action taken]
+    Technique: [MITRE TXXXX]
+    Input    : [Output from Step 2]
+    Output   : [Final impact]
+    Evidence : [How confirmed]
+
+Chain Visualization:
+  [F-001: SSRF] ──→ [F-002: Metadata Access] ──→ [F-003: IAM Creds]
+       │                     │                          │
+  (Medium 6.5)          (Medium 5.3)             (Critical 9.8)
+       └─────────── Combined Impact: CRITICAL ──────────┘
+
+Individual Severities: Medium + Medium + Low
+Combined Severity    : CRITICAL
+Justification        : [Why the chain is more severe than individual parts]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 5: ASSESS BLAST RADIUS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+For each attack chain, assess the total potential impact:
+
+```
+BLAST RADIUS ASSESSMENT
+========================
+
+Chain: [Name]
+
+Direct Impact:
+  - Systems affected    : [list specific systems]
+  - Data at risk        : [type and volume of data]
+  - Users affected      : [number and type of users]
+  - Services disrupted  : [which services could be affected]
+
+Indirect Impact:
+  - Regulatory          : [GDPR, HIPAA, PCI-DSS implications]
+  - Reputational        : [public-facing breach? customer trust?]
+  - Financial           : [estimated cost of breach]
+  - Operational         : [business process disruption]
+
+Scope Assessment:
+  - Contained    : Impact limited to one system/application
+  - Expanding    : Impact spreads to connected systems
+  - Catastrophic : Impact affects entire infrastructure/organization
+
+Confidence Level: [How certain are we this chain would work?]
+  - Fully validated : Every step confirmed with evidence
+  - Partially validated: Some steps confirmed, others assessed
+  - Theoretical    : Based on analysis, not full validation
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 6: PRIORITIZE CHAINS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Rank attack chains by combined risk:
+
+```
+CHAIN PRIORITY RANKING
+=======================
+
+Rank | Chain Name              | Impact   | Feasibility | Confidence | Priority
+-----|-------------------------|----------|-------------|------------|----------
+1    | [name]                  | Critical | High        | Validated  | P0
+2    | [name]                  | High     | High        | Validated  | P1
+3    | [name]                  | Critical | Low         | Partial    | P2
+4    | [name]                  | Medium   | High        | Validated  | P3
+
+Priority Formula:
+  P0 = Critical impact + High feasibility + Validated
+  P1 = High impact + High feasibility + Validated
+  P2 = Critical impact + Lower feasibility OR confidence
+  P3 = Medium impact OR lower confidence chains
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEP 7: DEFENSIVE BREAK POINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+For each chain, identify where defenders can break the chain:
+
+```
+DEFENSIVE BREAK POINTS
+=======================
+
+Chain: [Name]
+
+Break Point 1: Between Step 1 and Step 2
+  Defense: [What control would prevent this transition?]
+  Effort : [Easy | Medium | Hard to implement]
+  Example: "Input validation on URL parameter would prevent SSRF"
+
+Break Point 2: Between Step 2 and Step 3
+  Defense: [What control would prevent this transition?]
+  Effort : [Easy | Medium | Hard to implement]
+  Example: "IMDSv2 enforcement would prevent metadata access"
+
+Recommended Fix Strategy:
+  - Fix ALL break points for defense in depth
+  - If only one fix is possible: [which one and why]
+  - Compensating controls: [monitoring, alerting, etc.]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPLETE CHAIN ANALYSIS EXAMPLE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+```
+ATTACK CHAIN: Customer Database Compromise via Application Stack
+
+Findings Used:
+  F-003: Spring Boot Actuator exposed at /actuator/env (Medium)
+  F-007: Database credentials in actuator environment (High)
+  F-012: Database port (5432) accessible from internet (Medium)
+
+Step 1: Discovery — Actuator Endpoint Exposure
+  Technique: T1190 (Exploit Public-Facing Application)
+  Action: Access https://app.example.com/actuator/env
+  Result: Environment variables exposed including SPRING_DATASOURCE_URL,
+          SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD
+  Evidence: HTTP 200 response with full env dump
+
+Step 2: Credential Extraction — Database Credentials
+  Technique: T1552.001 (Credentials in Files)
+  Action: Parse actuator output for database credentials
+  Result: PostgreSQL credentials: dbuser / [REDACTED]
+          Database host: db.internal.example.com (resolves to 10.0.1.50,
+          but CNAME also points to rds.amazonaws.com — internet accessible)
+  Evidence: Credentials visible in plain text in actuator response
+
+Step 3: Data Access — Direct Database Connection
+  Technique: T1078 (Valid Accounts)
+  Action: Connect to database with discovered credentials
+  Result: Full read access to production database containing:
+          - 150,000 user records (name, email, hashed passwords)
+          - 50,000 order records (payment info partially tokenized)
+          - Application configuration including API keys
+  Evidence: Successful psql connection and SELECT count(*)
+
+Chain Visualization:
+  [Actuator Exposed] ──→ [DB Creds Leaked] ──→ [Database Access]
+    (Medium 5.3)           (High 7.5)           (Critical 9.1)
+         └────────── Combined: CRITICAL (9.8) ──────────┘
+
+Blast Radius:
+  - Direct: 150,000 user records, payment data, application secrets
+  - Indirect: GDPR/CCPA notification required, potential class action
+  - Regulatory: PCI-DSS violation (database credentials in plain text)
+
+Break Points:
+  1. Disable actuator endpoints in production (Easy — config change)
+  2. Use secret management (Vault/SSM) instead of env vars (Medium)
+  3. Restrict database access to application VPC only (Medium)
+  4. Use IAM auth for database instead of passwords (Hard)
+
+Recommendation: Fix #1 immediately (15 minutes), schedule #2 and #3
+                for next sprint, plan #4 for architecture roadmap.
+```
+
+################################################################################
+# END OF ATTACK CHAIN REASONING TEMPLATE
+################################################################################

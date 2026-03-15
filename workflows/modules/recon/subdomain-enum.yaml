@@ -1,0 +1,62 @@
+name: subdomain-enum
+kind: module
+desc: Comprehensive subdomain enumeration using passive and active sources
+tags: recon, subdomain, subfinder, amass
+
+params:
+  - name: threads
+    value: "20"
+  - name: resolvers
+    value: "{{Data}}/resolvers.txt"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/recon/subdomains
+      - mkdir -p {{Output}}/recon/resolved
+    exports:
+      subdomain_dir: "{{Output}}/recon/subdomains"
+
+  - name: passive-enumeration
+    type: parallel-steps
+    parallel_steps:
+      - name: subfinder-scan
+        type: bash
+        command: >
+          {{Binaries}}/subfinder -d {{Target}} -all -silent
+          -t {{threads}}
+          -oJ {{Output}}/recon/subdomains/subfinder.json
+          -o {{Output}}/recon/subdomains/subfinder.txt
+        timeout: 900
+      - name: amass-passive
+        type: bash
+        command: >
+          {{Binaries}}/amass enum -passive -d {{Target}}
+          -o {{Output}}/recon/subdomains/amass.txt
+        timeout: 1200
+        on_error: continue
+
+  - name: merge-results
+    type: bash
+    command: |
+      cat {{Output}}/recon/subdomains/subfinder.txt {{Output}}/recon/subdomains/amass.txt 2>/dev/null \
+        | grep -v '^$' | sort -u > {{Output}}/recon/subdomains/all-subdomains.txt
+    exports:
+      all_subdomains: "{{Output}}/recon/subdomains/all-subdomains.txt"
+
+  - name: resolve-subdomains
+    type: bash
+    command: >
+      {{Binaries}}/dnsx -l {{Output}}/recon/subdomains/all-subdomains.txt
+      -silent -a -resp -t {{threads}}
+      -o {{Output}}/recon/resolved/resolved-subdomains.txt
+    timeout: 600
+    on_error: continue
+
+  - name: count-results
+    type: bash
+    command: "wc -l < {{Output}}/recon/subdomains/all-subdomains.txt | tr -d ' ' > {{Output}}/recon/subdomains/count.txt"
+    exports:
+      subdomain_count: "{{Output}}/recon/subdomains/count.txt"
+      all_subdomains: "{{Output}}/recon/subdomains/all-subdomains.txt"

@@ -1,0 +1,412 @@
+################################################################################
+#                  OSMEDEUS ATTACK PLANNING — PLAN STAGE PROMPT
+#
+#  Purpose : Injected as plan_prompt before the main brain loop begins.
+#            Produces a structured attack plan the brain follows and adapts.
+#  Usage   : plan_prompt field in the agent step YAML definition.
+#  Version : 1.0.0
+################################################################################
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PLANNING INSTRUCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+You are about to begin a security assessment.  Before taking any action, you
+MUST produce a comprehensive attack plan.  This plan will guide your
+execution and help you prioritize effort.
+
+Analyze the target information provided and produce the plan in the exact
+format specified below.  Be specific — vague plans lead to wasted effort.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 1: TARGET ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## 1.1 Target Classification
+
+Determine the target type and characteristics:
+
+```
+TARGET CLASSIFICATION
+=====================
+Input           : [raw target as provided]
+Type            : domain | subdomain | IP | CIDR | URL | API | cloud-asset
+Root Domain     : [extracted root domain, if applicable]
+Protocol        : [HTTP/HTTPS/TCP/UDP, if specified]
+Port            : [specific port, if specified, else "all common"]
+Is Wildcard DNS : [yes/no/unknown — to be determined]
+CDN/WAF Likely  : [yes/no/unknown — initial assessment]
+Cloud Provider  : [AWS/GCP/Azure/unknown — initial assessment]
+```
+
+## 1.2 Scope Definition
+
+Clearly define what is IN scope and what is OUT of scope:
+
+```
+SCOPE DEFINITION
+================
+In Scope:
+  - [Primary target and all subdomains/IPs/paths that belong to it]
+  - [Any explicitly mentioned secondary targets]
+
+Out of Scope:
+  - Third-party services (CDN consoles, SaaS platforms, etc.)
+  - Infrastructure not owned by the target organization
+  - Targets explicitly excluded in the engagement parameters
+
+Scope Verification Method:
+  - DNS resolution → verify resolved IPs match target infrastructure
+  - WHOIS/ASN → confirm ownership of IP ranges
+  - If uncertain → flag for human review, do not test
+```
+
+## 1.3 Initial Attack Surface Estimation
+
+Before scanning, estimate the likely attack surface based on the target type:
+
+```
+ESTIMATED ATTACK SURFACE
+=========================
+  Subdomains (est.)     : [small <20 | medium 20-100 | large 100+ | N/A]
+  Web Services (est.)   : [count estimate]
+  Network Services (est.): [based on target type — IP=many, domain=fewer]
+  API Endpoints (est.)  : [if web app, estimate based on type]
+  Cloud Assets (est.)   : [S3 buckets, storage, etc.]
+  Third-Party Integrations: [CDN, analytics, payment, auth providers]
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 2: PHASED ATTACK PLAN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Produce a phase-by-phase plan.  Each phase must have concrete actions, tools,
+expected outcomes, and risk assessments.
+
+## Phase 1: Passive Reconnaissance
+
+```
+PHASE 1: PASSIVE RECONNAISSANCE
+================================
+Objective : Map the attack surface without touching the target directly.
+Time Budget: ~10-15% of total engagement time.
+Delegation : recon-specialist sub-agent
+
+Actions:
+  1.1 DNS Enumeration
+      Tool     : subfinder, amass (passive mode), crt.sh query
+      Target   : [root domain]
+      Expected : List of subdomains
+      Fallback : If tools fail, use certificate transparency logs via
+                 bash("curl -s 'https://crt.sh/?q=%25.[domain]&output=json' | jq ...")
+
+  1.2 WHOIS & ASN Analysis
+      Tool     : bash("whois [target]"), bash("host -t NS [domain]")
+      Expected : Registrar info, name servers, ASN, IP ranges
+      Purpose  : Scope verification + identify related infrastructure
+
+  1.3 Technology Fingerprinting (Passive)
+      Tool     : Check HTTP headers, analyze JavaScript, inspect HTML
+      Expected : Server software, frameworks, CMS, CDN provider
+      Purpose  : Guide later testing toward technology-specific vulns
+
+  1.4 Historical Data
+      Tool     : Wayback Machine, Google dorking (site:, inurl:, filetype:)
+      Expected : Old endpoints, removed pages, exposed files
+      Purpose  : Discover forgotten or legacy attack surface
+
+Risk Assessment:
+  - Risk     : Very low (passive only)
+  - Detection: None (no direct interaction with target)
+  - Failure  : Some sources may be unavailable; use multiple sources
+```
+
+## Phase 2: Active Reconnaissance
+
+```
+PHASE 2: ACTIVE RECONNAISSANCE
+================================
+Objective : Directly probe the target to enumerate services and technology.
+Time Budget: ~15-20% of total engagement time.
+Delegation : recon-specialist (enumeration), web-specialist (HTTP probing)
+
+Actions:
+  2.1 Port Scanning
+      Tool     : [depends on target size]
+                 - Single host    : nmap -sV -sC -p- --min-rate 1000
+                 - Small range    : nmap -sV -p [top-1000] + targeted follow-up
+                 - Large range    : masscan → nmap -sV on open ports
+      Expected : Open ports, service versions, OS fingerprint
+      Priority : TCP first, UDP top-20 if time permits
+
+  2.2 HTTP Service Probing
+      Tool     : httpx (with status codes, titles, technologies, CDN detection)
+      Target   : All discovered subdomains + IP:port combinations
+      Expected : Live web services, technology stack, CDN/WAF identification
+      Purpose  : Build target list for web testing phase
+
+  2.3 DNS Deep Dive
+      Tool     : bash("dig AXFR [domain] @[ns]"), DNS record enumeration
+      Expected : Zone transfer (unlikely but high-value), all record types
+      Focus    : CNAME chains (subdomain takeover?), TXT records (SPF, DKIM,
+                 verification tokens), SRV records (internal services)
+
+  2.4 SSL/TLS Analysis
+      Tool     : bash("testssl.sh [target]") or nmap ssl-enum-ciphers
+      Expected : Certificate details (SANs = more subdomains!), protocol
+                 versions, cipher suites, known TLS vulnerabilities
+      Priority : Medium — do early if HTTPS is primary protocol
+
+  2.5 Virtual Host Discovery
+      Tool     : bash("ffuf -w vhosts.txt -u https://[IP] -H 'Host: FUZZ.[domain]'")
+      Expected : Additional web applications on shared infrastructure
+      Trigger  : When multiple domains resolve to same IP
+
+Risk Assessment:
+  - Risk     : Low-Medium (active scanning may trigger IDS/WAF)
+  - Detection: Port scans and directory brute-force are noisy
+  - Mitigation: Rate limit scans, use SYN scan (not connect), stagger timing
+  - Failure  : Firewalls may block scans; try from different timing/approach
+```
+
+## Phase 3: Vulnerability Discovery
+
+```
+PHASE 3: VULNERABILITY DISCOVERY
+==================================
+Objective : Identify exploitable vulnerabilities in discovered services.
+Time Budget: ~30-35% of total engagement time.
+Delegation : vuln-specialist (automated scanning), web-specialist (manual testing)
+
+Actions:
+  3.1 Automated Vulnerability Scanning
+      Tool     : nuclei with severity filtering
+      Strategy : Run in waves:
+                 Wave 1: Critical + High severity, known CVEs
+                 Wave 2: Medium severity, misconfigurations
+                 Wave 3: Technology-specific templates
+                 Wave 4: Custom templates for edge cases
+      Expected : Confirmed vulnerabilities with evidence
+
+  3.2 Version-Based CVE Matching
+      Tool     : searchsploit, CVE databases, manual lookup
+      Input    : Service versions from Phase 2
+      Expected : Applicable CVEs with exploit availability
+      Priority : Focus on RCE, auth bypass, info disclosure
+
+  3.3 Web Application Testing (OWASP Top 10)
+      Tool     : Manual testing with bash/http_request, web-specialist
+      Coverage :
+        □ A01 Broken Access Control (IDOR, privilege escalation)
+        □ A02 Cryptographic Failures (weak TLS, exposed secrets)
+        □ A03 Injection (SQL, NoSQL, LDAP, OS command, SSTI)
+        □ A04 Insecure Design (business logic flaws)
+        □ A05 Security Misconfiguration (defaults, verbose errors)
+        □ A06 Vulnerable Components (outdated libraries)
+        □ A07 Auth Failures (brute force, weak passwords, session mgmt)
+        □ A08 Data Integrity (deserialization, CI/CD)
+        □ A09 Logging Failures (check if our activity is logged)
+        □ A10 SSRF (internal service access, cloud metadata)
+
+  3.4 Configuration Review
+      Tool     : Manual header analysis, security.txt, CORS testing
+      Check    : Security headers, cookie flags, CORS policy, CSP,
+                 HSTS, X-Frame-Options, referrer policy
+
+  3.5 Content Discovery
+      Tool     : ffuf / feroxbuster with targeted wordlists
+      Target   : Each unique web application
+      Wordlist : Technology-specific (e.g., Spring Boot actuators,
+                 PHP common files, Node.js endpoints)
+
+Risk Assessment:
+  - Risk     : Medium (active testing, potential for false positives)
+  - Detection: Moderate — nuclei scans and fuzzing are detectable
+  - Mitigation: Rate limiting, targeted (not broad) scanning
+  - Failure  : False positives expected; manual verification required
+```
+
+## Phase 4: Exploitation Validation
+
+```
+PHASE 4: EXPLOITATION VALIDATION
+==================================
+Objective : Confirm vulnerabilities are real and assess true impact.
+Time Budget: ~15-20% of total engagement time.
+Delegation : Brain handles critical chains; specialists for individual PoCs.
+
+Actions:
+  4.1 Prioritized Validation
+      Order    : Critical → High → Medium (skip Low/Info validation)
+      Method   : Safe proof-of-concept for each finding
+      Evidence : Capture request/response, tool output, timestamps
+
+  4.2 Attack Chain Construction
+      Method   : Map confirmed findings to MITRE ATT&CK
+      Goal     : Build multi-step attack narratives
+      Focus    : Chains that escalate from Low/Medium to Critical impact
+      Tool     : reasoning/attack-chain template
+
+  4.3 Impact Assessment
+      For each confirmed vulnerability:
+        - Confidentiality impact (data exposure)
+        - Integrity impact (data modification)
+        - Availability impact (service disruption)
+        - Scope (contained vs. cross-system)
+        - Blast radius estimation
+
+  4.4 Lateral Movement Analysis
+      If applicable:
+        - Can this finding lead to access to other systems?
+        - Are there trust relationships to exploit?
+        - Network segmentation effectiveness?
+
+Risk Assessment:
+  - Risk     : Medium-High (active exploitation attempts)
+  - Safety   : NON-DESTRUCTIVE PoCs only
+  - Detection: High — exploitation attempts are logged
+  - Mitigation: Minimal payloads, no data exfiltration
+```
+
+## Phase 5: Reporting
+
+```
+PHASE 5: REPORTING
+===================
+Objective : Produce clear, actionable, well-organized findings.
+Time Budget: ~10-15% of total engagement time.
+Delegation : report-specialist sub-agent
+
+Actions:
+  5.1 Finding Consolidation
+      - Deduplicate findings (same vuln on multiple endpoints = one finding)
+      - Merge related findings into attack chains
+      - Assign final severity based on validated impact
+
+  5.2 Report Generation
+      - Executive summary (non-technical, business impact)
+      - Technical findings (full detail with evidence)
+      - Attack chain narratives
+      - Remediation roadmap (prioritized by risk)
+      - Appendices (full tool output, methodology notes)
+
+  5.3 Quality Checks
+      - Every finding has evidence?
+      - Every finding has remediation?
+      - CVSS scores are accurate and justified?
+      - Scope was respected throughout?
+      - No sensitive data included in report?
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 3: PRIORITY ORDERING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Apply this priority framework to order your work:
+
+```
+PRIORITY MATRIX
+================
+
+Priority 1 — Quick Wins (do first, <5 minutes each):
+  ✓ Check for subdomain takeover (dangling CNAMEs)
+  ✓ Check for exposed sensitive files (.env, .git, backup files)
+  ✓ Check security headers on main domain
+  ✓ Check for default credentials on admin panels
+  ✓ Check for known CVEs on identified service versions
+  ✓ Check for open S3 buckets or cloud storage
+
+Priority 2 — Standard Assessment (bulk of the engagement):
+  ✓ Full subdomain enumeration
+  ✓ Comprehensive port scanning
+  ✓ Automated vulnerability scanning (Nuclei)
+  ✓ Directory and content discovery
+  ✓ OWASP Top 10 manual testing
+
+Priority 3 — Deep Dives (if time permits):
+  ✓ Business logic testing
+  ✓ API fuzzing with custom payloads
+  ✓ Source code analysis (if accessible)
+  ✓ Complex attack chain exploitation
+  ✓ Less common protocols (SNMP, LDAP, etc.)
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 4: PROFILE-SPECIFIC ADJUSTMENTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Modify the plan based on the active profile:
+
+```
+PROFILE ADJUSTMENTS
+====================
+
+bug-bounty:
+  - Emphasize impact over coverage
+  - Skip network-level testing (usually out of scope)
+  - Focus on web application and API testing
+  - Document thoroughly for report submission
+  - Prioritize: RCE > Auth bypass > IDOR > XSS > Info disclosure
+  - Time allocation: 60% vuln discovery, 20% recon, 20% reporting
+
+red-team:
+  - Stealth is paramount — avoid detection
+  - Slow and targeted scanning (no broad sweeps)
+  - Emphasize attack chaining for maximum impact
+  - Credential harvesting and lateral movement
+  - Simulate real threat actor TTPs
+  - Time allocation: 30% recon, 40% targeted exploitation, 30% chaining
+
+recon-only:
+  - No active exploitation or fuzzing
+  - Passive and semi-passive techniques only
+  - Focus on mapping the complete attack surface
+  - Technology stack and version detection
+  - Output: asset inventory with risk ratings
+  - Time allocation: 70% passive recon, 20% analysis, 10% reporting
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5: RESOURCE & TIME ESTIMATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Estimate resources based on target complexity:
+
+```
+RESOURCE ESTIMATION
+====================
+
+Target Complexity Assessment:
+  □ Simple (single domain, few services)    → ~30 min total
+  □ Medium (domain + subdomains, ~10 services) → ~1-2 hours total
+  □ Complex (large scope, many services)    → ~3-5 hours total
+  □ Enterprise (CIDR ranges, many domains)  → ~8+ hours total
+
+Tool Concurrency Plan:
+  - Max parallel sub-agents: 3
+  - Max concurrent scans: 2 (to avoid overwhelming target)
+  - Rate limit for HTTP requests: 10-50 req/sec (adjust based on target)
+
+Checkpoint Schedule:
+  - After Phase 1: Review findings, adjust plan
+  - After Phase 2: Major reassessment — attack surface is now known
+  - After Phase 3: Triage findings, plan validation
+  - After Phase 4: Final review before reporting
+```
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OUTPUT FORMAT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Produce your plan using the sections above.  The plan should be:
+  1. SPECIFIC — name exact tools, exact modules, exact techniques
+  2. ORDERED — what runs first, what runs in parallel, what waits
+  3. ADAPTIVE — include decision points and fallback strategies
+  4. SAFE — scope checks at every phase transition
+  5. EFFICIENT — maximize findings per unit of time
+
+After producing the plan, immediately begin execution with Phase 1.
+
+################################################################################
+# END OF ATTACK PLANNING PROMPT
+################################################################################

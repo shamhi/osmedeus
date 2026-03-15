@@ -1,0 +1,110 @@
+name: smb-audit
+kind: module
+desc: SMB share enumeration, NetBIOS discovery, and null session testing
+tags: network, smb, netbios, enum4linux, nmap
+
+params:
+  - name: smbThreads
+    value: "10"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/network/smb
+      - mkdir -p {{Output}}/network/smb/shares
+      - mkdir -p {{Output}}/network/smb/netbios
+    exports:
+      smb_dir: "{{Output}}/network/smb"
+
+  - name: smb-nmap-enumeration
+    type: parallel-steps
+    parallel_steps:
+      - name: smb-shares
+        type: bash
+        command: >
+          {{Binaries}}/nmap -p 139,445
+          --script=smb-enum-shares,smb-ls,smb-enum-users
+          --script-args smbusername=guest,smbpassword=
+          -oN {{Output}}/network/smb/shares/smb-shares.txt
+          -oX {{Output}}/network/smb/shares/smb-shares.xml
+          {{Target}}
+        timeout: 900
+        on_error: continue
+      - name: smb-vulns
+        type: bash
+        command: >
+          {{Binaries}}/nmap -p 139,445
+          --script=smb-vuln-ms06-025,smb-vuln-ms07-029,smb-vuln-ms08-067,smb-vuln-ms10-054,smb-vuln-ms10-061,smb-vuln-ms17-010
+          -oN {{Output}}/network/smb/smb-vulns.txt
+          -oX {{Output}}/network/smb/smb-vulns.xml
+          {{Target}}
+        timeout: 900
+        on_error: continue
+      - name: smb-protocols
+        type: bash
+        command: >
+          {{Binaries}}/nmap -p 139,445
+          --script=smb-protocols,smb2-security-mode,smb-security-mode,smb-os-discovery
+          -oN {{Output}}/network/smb/smb-protocols.txt
+          -oX {{Output}}/network/smb/smb-protocols.xml
+          {{Target}}
+        timeout: 600
+        on_error: continue
+
+  - name: netbios-scan
+    type: bash
+    command: >
+      {{Binaries}}/nmap -sU -p 137
+      --script=nbstat
+      -oN {{Output}}/network/smb/netbios/nbstat.txt
+      -oX {{Output}}/network/smb/netbios/nbstat.xml
+      {{Target}}
+    timeout: 600
+    on_error: continue
+
+  - name: enum4linux-scan
+    type: bash
+    command: >
+      {{Binaries}}/enum4linux-ng -A
+      -oJ {{Output}}/network/smb/enum4linux-results
+      {{Target}}
+      2>&1 | tee {{Output}}/network/smb/enum4linux-output.txt
+    timeout: 900
+    on_error: continue
+
+  - name: null-session-test
+    type: bash
+    command: |
+      > {{Output}}/network/smb/null-session.txt
+      echo "=== Null Session Tests ===" >> {{Output}}/network/smb/null-session.txt
+      echo "--- smbclient null session ---" >> {{Output}}/network/smb/null-session.txt
+      smbclient -L //{{Target}} -N 2>&1 >> {{Output}}/network/smb/null-session.txt
+      echo "" >> {{Output}}/network/smb/null-session.txt
+      echo "--- rpcclient null session ---" >> {{Output}}/network/smb/null-session.txt
+      echo "enumdomusers" | rpcclient -U "" -N {{Target}} 2>&1 >> {{Output}}/network/smb/null-session.txt
+    timeout: 300
+    on_error: continue
+
+  - name: aggregate-smb-findings
+    type: bash
+    command: |
+      > {{Output}}/network/smb/smb-findings.txt
+      echo "# SMB Audit Report - {{Target}}" >> {{Output}}/network/smb/smb-findings.txt
+      echo "" >> {{Output}}/network/smb/smb-findings.txt
+      echo "## Share Enumeration" >> {{Output}}/network/smb/smb-findings.txt
+      cat {{Output}}/network/smb/shares/smb-shares.txt 2>/dev/null >> {{Output}}/network/smb/smb-findings.txt
+      echo "" >> {{Output}}/network/smb/smb-findings.txt
+      echo "## SMB Vulnerabilities" >> {{Output}}/network/smb/smb-findings.txt
+      cat {{Output}}/network/smb/smb-vulns.txt 2>/dev/null >> {{Output}}/network/smb/smb-findings.txt
+      echo "" >> {{Output}}/network/smb/smb-findings.txt
+      echo "## Protocol & Security Info" >> {{Output}}/network/smb/smb-findings.txt
+      cat {{Output}}/network/smb/smb-protocols.txt 2>/dev/null >> {{Output}}/network/smb/smb-findings.txt
+      echo "" >> {{Output}}/network/smb/smb-findings.txt
+      echo "## Null Session Results" >> {{Output}}/network/smb/smb-findings.txt
+      cat {{Output}}/network/smb/null-session.txt 2>/dev/null >> {{Output}}/network/smb/smb-findings.txt
+      echo "" >> {{Output}}/network/smb/smb-findings.txt
+      echo "## enum4linux-ng Results" >> {{Output}}/network/smb/smb-findings.txt
+      cat {{Output}}/network/smb/enum4linux-output.txt 2>/dev/null >> {{Output}}/network/smb/smb-findings.txt
+    exports:
+      smb_findings: "{{Output}}/network/smb/smb-findings.txt"

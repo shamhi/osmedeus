@@ -1,0 +1,49 @@
+# =============================================================================
+# AI Scan Flow — Full Autonomous Security Assessment
+# =============================================================================
+# The brain controller operates in bug-bounty profile, autonomously managing
+# reconnaissance, enumeration, vulnerability discovery, and exploitation.
+#
+# Usage:
+#   osmedeus run -f ai-scan -t example.com
+#   osmedeus run -f ai-scan -t example.com -P params.yaml
+
+name: ai-scan
+kind: flow
+description: Full AI-driven security scan — brain controller handles all phases autonomously
+tags: ai, scan, brain, autonomous, bug-bounty
+
+params:
+  - name: profile
+    value: "bug-bounty"
+  - name: max_iterations
+    value: "50"
+  - name: threads
+    value: "20"
+  - name: timeout
+    value: "14400"
+
+modules:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Stage 1: Brain Controller — Autonomous AI Scanner
+  # The brain module uses an LLM agent loop to plan, execute, and adapt
+  # its scanning strategy in real time based on discovered information.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: brain-controller
+    path: modules/brain/controller.yaml
+    params:
+      profile: "{{profile}}"
+      max_iterations: "{{max_iterations}}"
+      threads: "{{threads}}"
+      timeout: "{{timeout}}"
+    condition: "true"
+    on_success:
+      - action: log
+        message: "AI scan completed successfully for {{Target}}"
+      - action: notify
+        notify: "AI scan finished for {{Target}} — check {{Output}} for results"
+    on_error:
+      - action: log
+        message: "AI scan encountered an error for {{Target}}"
+      - action: continue
+        message: "Brain controller stopped — partial results may be available in {{Output}}"

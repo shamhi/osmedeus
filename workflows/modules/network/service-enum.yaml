@@ -1,0 +1,99 @@
+name: service-enum
+kind: module
+desc: Service-specific enumeration using nmap NSE scripts, banner grabbing, and default credential checks
+tags: network, service, nmap, nse, banner
+
+params:
+  - name: portsFile
+    value: "{{Output}}/recon/ports/open-ports.txt"
+  - name: servicesFile
+    value: "{{Output}}/recon/services/nmap-services.xml"
+  - name: threads
+    value: "20"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/network/services
+      - mkdir -p {{Output}}/network/banners
+      - mkdir -p {{Output}}/network/creds
+    exports:
+      services_dir: "{{Output}}/network/services"
+      banners_dir: "{{Output}}/network/banners"
+
+  - name: prepare-port-list
+    type: bash
+    command: |
+      if [ -f {{portsFile}} ]; then
+        paste -sd',' {{portsFile}} > {{Output}}/network/port-csv.txt
+      else
+        echo "21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1433,1521,3306,3389,5432,5900,6379,8080,8443,27017" \
+          > {{Output}}/network/port-csv.txt
+      fi
+    exports:
+      port_csv: "{{Output}}/network/port-csv.txt"
+
+  - name: service-enumeration-scripts
+    type: parallel-steps
+    parallel_steps:
+      - name: nmap-http-enum
+        type: bash
+        command: >
+          {{Binaries}}/nmap -p $(cat {{Output}}/network/port-csv.txt)
+          --script=http-enum,http-headers,http-methods,http-title,http-robots.txt,http-sitemap-generator
+          -oN {{Output}}/network/services/http-enum.txt
+          -oX {{Output}}/network/services/http-enum.xml
+          {{Target}}
+        timeout: 1800
+        on_error: continue
+      - name: nmap-auth-scripts
+        type: bash
+        command: >
+          {{Binaries}}/nmap -p $(cat {{Output}}/network/port-csv.txt)
+          --script=ftp-anon,ssh-auth-methods,mysql-empty-password,ms-sql-empty-password,redis-info
+          -oN {{Output}}/network/creds/default-creds.txt
+          -oX {{Output}}/network/creds/default-creds.xml
+          {{Target}}
+        timeout: 1200
+        on_error: continue
+      - name: nmap-db-scripts
+        type: bash
+        command: >
+          {{Binaries}}/nmap -p $(cat {{Output}}/network/port-csv.txt)
+          --script=mysql-info,ms-sql-info,mongodb-info,redis-info,pgsql-info,oracle-sid-brute
+          -oN {{Output}}/network/services/db-enum.txt
+          -oX {{Output}}/network/services/db-enum.xml
+          {{Target}}
+        timeout: 1200
+        on_error: continue
+
+  - name: banner-grabbing
+    type: bash
+    command: >
+      {{Binaries}}/nmap -sV --version-intensity 9
+      -p $(cat {{Output}}/network/port-csv.txt)
+      --script=banner
+      -oN {{Output}}/network/banners/banners.txt
+      -oX {{Output}}/network/banners/banners.xml
+      {{Target}}
+    timeout: 1800
+    on_error: continue
+
+  - name: aggregate-service-details
+    type: bash
+    command: |
+      > {{Output}}/network/service-details.txt
+      echo "=== HTTP Enumeration ===" >> {{Output}}/network/service-details.txt
+      cat {{Output}}/network/services/http-enum.txt 2>/dev/null >> {{Output}}/network/service-details.txt
+      echo "" >> {{Output}}/network/service-details.txt
+      echo "=== Database Services ===" >> {{Output}}/network/service-details.txt
+      cat {{Output}}/network/services/db-enum.txt 2>/dev/null >> {{Output}}/network/service-details.txt
+      echo "" >> {{Output}}/network/service-details.txt
+      echo "=== Default Credentials ===" >> {{Output}}/network/service-details.txt
+      cat {{Output}}/network/creds/default-creds.txt 2>/dev/null >> {{Output}}/network/service-details.txt
+      echo "" >> {{Output}}/network/service-details.txt
+      echo "=== Banners ===" >> {{Output}}/network/service-details.txt
+      cat {{Output}}/network/banners/banners.txt 2>/dev/null >> {{Output}}/network/service-details.txt
+    exports:
+      service_details: "{{Output}}/network/service-details.txt"

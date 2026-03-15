@@ -1,0 +1,229 @@
+kind: module
+name: brain-controller
+description: AI Brain - LLM-driven security scanning controller
+tags: ai,brain,controller,agent
+
+params:
+  - name: profile
+    default: "bug-bounty"
+  - name: max_iterations
+    default: "50"
+  - name: model
+    default: ""
+
+steps:
+  # Step 1: Setup output directories
+  - name: setup
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/brain {{Output}}/recon {{Output}}/vuln {{Output}}/network {{Output}}/report
+    exports:
+      brain_dir: "{{Output}}/brain"
+
+  # Step 2: Load profile constraints from prompts/profiles/
+  - name: load-profile
+    type: bash
+    command: cat {{BaseFolder}}/prompts/profiles/{{profile}}.txt 2>/dev/null || echo "No profile constraints"
+    exports:
+      profile_constraints: "{{Result}}"
+
+  # Step 3: Load brain system prompt
+  - name: load-system-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/brain/hacker-brain.txt
+    exports:
+      brain_system_prompt: "{{Result}}"
+
+  # Step 4: Load attack planning prompt
+  - name: load-plan-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/brain/attack-planning.txt
+    exports:
+      brain_plan_prompt: "{{Result}}"
+
+  # Step 5: Load sub-agent prompts
+  - name: load-recon-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/agents/recon-specialist.txt
+    exports:
+      recon_prompt: "{{Result}}"
+
+  - name: load-vuln-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/agents/vuln-specialist.txt
+    exports:
+      vuln_prompt: "{{Result}}"
+
+  - name: load-web-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/agents/web-specialist.txt
+    exports:
+      web_prompt: "{{Result}}"
+
+  - name: load-network-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/agents/network-specialist.txt
+    exports:
+      network_prompt: "{{Result}}"
+
+  - name: load-report-prompt
+    type: bash
+    command: cat {{BaseFolder}}/prompts/agents/report-specialist.txt
+    exports:
+      report_prompt: "{{Result}}"
+
+  # Step 6: The Brain — agentic LLM controller
+  - name: brain-agent
+    type: agent
+    log: "Starting brain agent for {{Target}} with profile {{profile}}"
+
+    system_prompt: "{{brain_system_prompt}}"
+
+    plan_prompt: |
+      {{brain_plan_prompt}}
+
+      Target: {{Target}}
+      Profile: {{profile}}
+      Profile constraints: {{profile_constraints}}
+      Output directory: {{Output}}
+
+    query: |
+      You are conducting a security assessment of {{Target}}.
+
+      Profile: {{profile}}
+      Profile constraints:
+      {{profile_constraints}}
+
+      Your output directory is {{Output}}.
+      Your brain working directory is {{Output}}/brain.
+
+      Available scan modules (use run_module to execute):
+        - recon/subdomain-enum: Subdomain enumeration (subfinder, amass)
+        - recon/port-scan: Port scanning (nmap, masscan)
+        - recon/http-probe: HTTP probing (httpx)
+        - recon/dns-enum: DNS enumeration (dnsx)
+        - vuln/nuclei-scan: Vulnerability scanning (nuclei)
+        - vuln/ssl-audit: SSL/TLS audit (testssl, sslyze)
+        - vuln/web-fuzz: Directory/param fuzzing (ffuf)
+        - vuln/sqli-scan: SQL injection testing (sqlmap)
+        - network/service-enum: Service fingerprinting
+        - network/smb-audit: SMB/NetBIOS audit
+        - report/generate-report: AI report generation
+
+      Begin your assessment. Follow your methodology systematically.
+      Save intermediate findings to {{Output}}/brain/findings.json.
+      Save your final report to {{Output}}/report/final-report.md.
+
+    max_iterations: 50
+
+    models:
+      - "gpt-4.1"
+      - "o4-mini"
+
+    agent_tools:
+      - preset: bash
+      - preset: read_file
+      - preset: read_lines
+      - preset: save_content
+      - preset: append_file
+      - preset: file_exists
+      - preset: file_length
+      - preset: glob
+      - preset: grep_string
+      - preset: grep_regex
+      - preset: http_get
+      - preset: http_request
+      - preset: jq
+      - preset: exec_python
+      - preset: run_module
+      - preset: run_flow
+
+    memory:
+      max_messages: 60
+      summarize_on_truncate: true
+      persist_path: "{{Output}}/brain/conversation.json"
+
+    sub_agents:
+      - name: recon_specialist
+        description: "Delegate reconnaissance tasks - subdomain enum, port scanning, DNS analysis, service discovery"
+        system_prompt: "{{recon_prompt}}"
+        max_iterations: 15
+        agent_tools:
+          - preset: bash
+          - preset: read_file
+          - preset: save_content
+          - preset: file_exists
+          - preset: glob
+          - preset: grep_regex
+          - preset: jq
+          - preset: run_module
+
+      - name: vuln_specialist
+        description: "Delegate vulnerability scanning - nuclei, CVE analysis, logic flaw detection"
+        system_prompt: "{{vuln_prompt}}"
+        max_iterations: 15
+        agent_tools:
+          - preset: bash
+          - preset: read_file
+          - preset: save_content
+          - preset: file_exists
+          - preset: grep_regex
+          - preset: jq
+          - preset: run_module
+
+      - name: web_specialist
+        description: "Delegate web app testing - fuzzing, injection, auth bypass, API testing"
+        system_prompt: "{{web_prompt}}"
+        max_iterations: 15
+        agent_tools:
+          - preset: bash
+          - preset: read_file
+          - preset: save_content
+          - preset: http_get
+          - preset: http_request
+          - preset: grep_regex
+          - preset: run_module
+
+      - name: network_specialist
+        description: "Delegate network-level testing - service attacks, protocol analysis, lateral movement"
+        system_prompt: "{{network_prompt}}"
+        max_iterations: 15
+        agent_tools:
+          - preset: bash
+          - preset: read_file
+          - preset: save_content
+          - preset: file_exists
+          - preset: grep_regex
+          - preset: run_module
+
+      - name: report_specialist
+        description: "Delegate report generation - compile findings, write executive summary, CVSS scoring"
+        system_prompt: "{{report_prompt}}"
+        max_iterations: 10
+        agent_tools:
+          - preset: bash
+          - preset: read_file
+          - preset: read_lines
+          - preset: save_content
+          - preset: glob
+          - preset: grep_regex
+          - preset: jq
+
+    on_tool_start: 'log_info("Brain calling tool: " + tool_name)'
+    on_tool_end: 'log_info("Tool " + tool_name + " completed in " + duration + "ms")'
+
+    exports:
+      brain_output: "{{agent_content}}"
+      brain_plan: "{{agent_plan}}"
+      brain_iterations: "{{agent_iterations}}"
+      brain_tokens: "{{agent_total_tokens}}"
+      brain_history: "{{agent_history}}"
+
+  # Step 7: Save brain summary and stats
+  - name: save-summary
+    type: bash
+    commands:
+      - 'echo "{{brain_output}}" > {{Output}}/brain/summary.md'
+      - 'echo "Brain iterations: {{brain_iterations}}" >> {{Output}}/brain/stats.txt'
+      - 'echo "Total tokens: {{brain_tokens}}" >> {{Output}}/brain/stats.txt'
+      - 'echo "Plan: {{brain_plan}}" >> {{Output}}/brain/stats.txt'

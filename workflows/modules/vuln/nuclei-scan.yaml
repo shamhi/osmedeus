@@ -1,0 +1,82 @@
+name: nuclei-scan
+kind: module
+desc: Template-based vulnerability scanning with nuclei across multiple severity levels
+tags: vuln, nuclei, cve, scan
+
+params:
+  - name: inputFile
+    value: "{{Output}}/recon/http/live-hosts.txt"
+  - name: threads
+    value: "25"
+  - name: rate_limit
+    value: "150"
+  - name: severity
+    value: "critical,high,medium"
+  - name: templates_path
+    value: "{{Data}}/nuclei-templates"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/vulns/nuclei
+    exports:
+      nuclei_dir: "{{Output}}/vulns/nuclei"
+
+  - name: nuclei-critical-high
+    type: bash
+    command: >
+      {{Binaries}}/nuclei
+      -l {{inputFile}}
+      -severity critical,high
+      -c {{threads}}
+      -rl {{rate_limit}}
+      -timeout 10
+      -retries 2
+      -no-color
+      -jsonl
+      -o {{Output}}/vulns/nuclei/critical-high.jsonl
+    timeout: 7200
+    on_error: continue
+
+  - name: nuclei-medium
+    type: bash
+    command: >
+      {{Binaries}}/nuclei
+      -l {{inputFile}}
+      -severity medium
+      -c {{threads}}
+      -rl {{rate_limit}}
+      -timeout 10
+      -retries 1
+      -no-color
+      -jsonl
+      -o {{Output}}/vulns/nuclei/medium.jsonl
+    timeout: 7200
+    on_error: continue
+
+  - name: nuclei-exposure-misconfig
+    type: bash
+    command: >
+      {{Binaries}}/nuclei
+      -l {{inputFile}}
+      -tags exposure,misconfig,default-login,cve
+      -severity critical,high,medium
+      -c {{threads}}
+      -rl {{rate_limit}}
+      -timeout 10
+      -no-color
+      -jsonl
+      -o {{Output}}/vulns/nuclei/exposure-misconfig.jsonl
+    timeout: 7200
+    on_error: continue
+
+  - name: merge-nuclei-results
+    type: bash
+    command: |
+      cat {{Output}}/vulns/nuclei/*.jsonl 2>/dev/null | sort -u > {{Output}}/vulns/nuclei/all-vulnerabilities.jsonl
+      cat {{Output}}/vulns/nuclei/all-vulnerabilities.jsonl \
+        | jq -r '[.info.severity, .info.name, .host, .matched_at] | @tsv' \
+        2>/dev/null | sort > {{Output}}/vulns/nuclei/vulnerability-summary.tsv
+    exports:
+      vulnerabilities: "{{Output}}/vulns/nuclei/all-vulnerabilities.jsonl"

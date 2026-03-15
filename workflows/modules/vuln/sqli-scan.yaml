@@ -1,0 +1,79 @@
+name: sqli-scan
+kind: module
+desc: SQL injection testing on discovered URLs using sqlmap in batch mode
+tags: vuln, sqli, sqlmap, injection
+
+params:
+  - name: inputFile
+    value: "{{Output}}/vulns/fuzz/discovered-paths.txt"
+  - name: risk
+    value: "2"
+  - name: level
+    value: "3"
+  - name: threads
+    value: "5"
+  - name: timeout
+    value: "30"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/vulns/sqli/raw
+      - mkdir -p {{Output}}/vulns/sqli/dumps
+    exports:
+      sqli_dir: "{{Output}}/vulns/sqli"
+
+  - name: prepare-target-urls
+    type: bash
+    command: |
+      # Extract URLs with query parameters (most likely SQLi candidates)
+      grep -E '\?' {{inputFile}} 2>/dev/null | awk '{print $1}' | sort -u > {{Output}}/vulns/sqli/candidate-urls.txt
+      # Also include URLs from paramspider/wayback if available
+      cat {{Output}}/recon/http/live-hosts.txt 2>/dev/null | while read host; do
+        echo "${host}/?id=1" >> {{Output}}/vulns/sqli/candidate-urls.txt
+      done
+      sort -u {{Output}}/vulns/sqli/candidate-urls.txt -o {{Output}}/vulns/sqli/candidate-urls.txt
+    exports:
+      sqli_targets: "{{Output}}/vulns/sqli/candidate-urls.txt"
+
+  - name: sqlmap-batch-scan
+    type: foreach
+    pre_condition: "file_exists('{{Output}}/vulns/sqli/candidate-urls.txt')"
+    input: "{{Output}}/vulns/sqli/candidate-urls.txt"
+    variable: sqli_url
+    threads: "{{threads}}"
+    step:
+      name: sqlmap-single
+      type: bash
+      command: >
+        {{Binaries}}/sqlmap -u '[[sqli_url]]'
+        --batch
+        --risk={{risk}}
+        --level={{level}}
+        --threads={{threads}}
+        --timeout={{timeout}}
+        --random-agent
+        --tamper=space2comment
+        --output-dir={{Output}}/vulns/sqli/raw
+        --forms
+        --crawl=2
+        2>&1 | tee -a {{Output}}/vulns/sqli/sqlmap-log.txt
+      timeout: 600
+      on_error: continue
+
+  - name: collect-findings
+    type: bash
+    command: |
+      > {{Output}}/vulns/sqli/sqli-findings.txt
+      find {{Output}}/vulns/sqli/raw -name 'log' -o -name '*.csv' 2>/dev/null | while read f; do
+        if grep -qiE 'injectable|vulnerable' "$f" 2>/dev/null; then
+          echo "=== $f ===" >> {{Output}}/vulns/sqli/sqli-findings.txt
+          cat "$f" >> {{Output}}/vulns/sqli/sqli-findings.txt
+          echo "" >> {{Output}}/vulns/sqli/sqli-findings.txt
+        fi
+      done
+      grep -iE 'injectable|vulnerable|payload' {{Output}}/vulns/sqli/sqlmap-log.txt \
+        >> {{Output}}/vulns/sqli/sqli-findings.txt 2>/dev/null
+    exports:
+      sqli_findings: "{{Output}}/vulns/sqli/sqli-findings.txt"

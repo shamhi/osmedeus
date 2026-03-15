@@ -1,0 +1,73 @@
+name: web-fuzz
+kind: module
+desc: Web content discovery and directory brute-forcing with ffuf
+tags: vuln, fuzz, ffuf, discovery
+
+params:
+  - name: inputFile
+    value: "{{Output}}/recon/http/live-hosts.txt"
+  - name: wordlist
+    value: "{{Data}}/wordlists/common.txt"
+  - name: wordlist_large
+    value: "{{Data}}/wordlists/directory-list-2.3-medium.txt"
+  - name: threads
+    value: "40"
+  - name: rate_limit
+    value: "100"
+  - name: extensions
+    value: "php,asp,aspx,jsp,html,js,json,xml,txt,bak,conf"
+  - name: match_codes
+    value: "200,201,204,301,302,307,401,403,405"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/vulns/fuzz/raw
+      - mkdir -p {{Output}}/vulns/fuzz/recursive
+    exports:
+      fuzz_dir: "{{Output}}/vulns/fuzz"
+
+  - name: ffuf-directory-scan
+    type: foreach
+    input: "{{inputFile}}"
+    variable: target_url
+    threads: 5
+    step:
+      name: ffuf-single-host
+      type: bash
+      command: >
+        {{Binaries}}/ffuf -u [[target_url]]/FUZZ
+        -w {{wordlist}}
+        -mc {{match_codes}}
+        -ac
+        -t {{threads}}
+        -rate {{rate_limit}}
+        -timeout 10
+        -recursion -recursion-depth 2
+        -e .{{extensions}}
+        -of json
+        -o {{Output}}/vulns/fuzz/raw/$(echo '[[target_url]]' | md5sum | cut -d' ' -f1).json
+      timeout: 1800
+      on_error: continue
+
+  - name: merge-fuzz-results
+    type: bash
+    command: |
+      > {{Output}}/vulns/fuzz/discovered-paths.txt
+      for f in {{Output}}/vulns/fuzz/raw/*.json; do
+        [ -f "$f" ] && jq -r '.results[]? | [.url, (.status|tostring), (.length|tostring)] | @tsv' "$f" \
+          >> {{Output}}/vulns/fuzz/discovered-paths.txt 2>/dev/null
+      done
+      sort -u {{Output}}/vulns/fuzz/discovered-paths.txt -o {{Output}}/vulns/fuzz/discovered-paths.txt
+
+  - name: extract-interesting
+    type: bash
+    command: |
+      grep -iE '\.(bak|old|conf|env|sql|log|zip|tar|gz|swp)' {{Output}}/vulns/fuzz/discovered-paths.txt \
+        > {{Output}}/vulns/fuzz/interesting-files.txt 2>/dev/null
+      grep -E '\t(401|403)\t' {{Output}}/vulns/fuzz/discovered-paths.txt \
+        > {{Output}}/vulns/fuzz/auth-required.txt 2>/dev/null
+    on_error: continue
+    exports:
+      discovered_paths: "{{Output}}/vulns/fuzz/discovered-paths.txt"

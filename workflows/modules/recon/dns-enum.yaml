@@ -1,0 +1,83 @@
+name: dns-enum
+kind: module
+desc: DNS record enumeration including all record types, reverse lookups, and zone transfers
+tags: recon, dns, dnsx, zone-transfer
+
+params:
+  - name: inputFile
+    value: "{{Output}}/recon/subdomains/all-subdomains.txt"
+  - name: dnsThreads
+    value: "30"
+  - name: dnsTimeout
+    value: "5"
+  - name: resolvers
+    value: "{{Data}}/resolvers.txt"
+
+steps:
+  - name: setup-directories
+    type: bash
+    commands:
+      - mkdir -p {{Output}}/recon/dns
+      - mkdir -p {{Output}}/recon/dns/records
+    exports:
+      dns_dir: "{{Output}}/recon/dns"
+
+  - name: dns-record-enumeration
+    type: parallel-steps
+    parallel_steps:
+      - name: dnsx-a-aaaa
+        type: bash
+        command: >
+          cat {{inputFile}} | {{Binaries}}/dnsx -silent
+          -a -aaaa -resp
+          -t {{dnsThreads}}
+          -o {{Output}}/recon/dns/records/a-aaaa.txt
+        timeout: 600
+      - name: dnsx-cname-mx
+        type: bash
+        command: >
+          cat {{inputFile}} | {{Binaries}}/dnsx -silent
+          -cname -mx -resp
+          -t {{dnsThreads}}
+          -o {{Output}}/recon/dns/records/cname-mx.txt
+        timeout: 600
+      - name: dnsx-ns-txt-soa
+        type: bash
+        command: >
+          cat {{inputFile}} | {{Binaries}}/dnsx -silent
+          -ns -txt -soa -resp
+          -t {{dnsThreads}}
+          -o {{Output}}/recon/dns/records/ns-txt-soa.txt
+        timeout: 600
+
+  - name: merge-dns-records
+    type: bash
+    command: "cat {{Output}}/recon/dns/records/*.txt 2>/dev/null | sort -u > {{Output}}/recon/dns/all-dns-records.txt"
+    exports:
+      dns_records: "{{Output}}/recon/dns/all-dns-records.txt"
+
+  - name: reverse-dns-lookup
+    type: bash
+    command: |
+      grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' {{Output}}/recon/dns/records/a-aaaa.txt 2>/dev/null \
+        | sort -u \
+        | {{Binaries}}/dnsx -silent -ptr -resp \
+        -t {{dnsThreads}} \
+        -o {{Output}}/recon/dns/reverse-dns.txt
+    timeout: 600
+    on_error: continue
+
+  - name: zone-transfer-check
+    type: bash
+    command: |
+      ns_servers=$(grep -i 'NS' {{Output}}/recon/dns/records/ns-txt-soa.txt 2>/dev/null | awk '{print $NF}' | sort -u)
+      > {{Output}}/recon/dns/zone-transfers.txt
+      for ns in $ns_servers; do
+        echo "=== Attempting zone transfer from $ns ===" >> {{Output}}/recon/dns/zone-transfers.txt
+        dig @"$ns" {{Target}} AXFR +noall +answer 2>&1 >> {{Output}}/recon/dns/zone-transfers.txt
+      done
+    timeout: 300
+    on_error: continue
+    exports:
+      dns_records: "{{Output}}/recon/dns/all-dns-records.txt"
+      zone_transfers: "{{Output}}/recon/dns/zone-transfers.txt"
