@@ -450,6 +450,8 @@ ai-up:
 	@echo "$(PREFIX) Waiting for health check..."
 	@for i in $$(seq 1 30); do curl -sf http://localhost:8002/health > /dev/null 2>&1 && break || sleep 2; done
 	@echo "$(PREFIX) AI scanner ready at http://localhost:8002"
+	@printf "    \033[32mUsername:\033[0m $${OSM_USERNAME:-admin}\n"
+	@printf "    \033[32mPassword:\033[0m $${OSM_PASSWORD:-admin}\n"
 
 # Stop AI scanner stack
 ai-down:

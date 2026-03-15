@@ -33,11 +33,14 @@ services:
       # Mount workflow & prompt sources read-only for live editing
       - ./../../workflows:/root/osmedeus-base/workflows:ro
       - ./../../prompts:/root/osmedeus-base/prompts:ro
-      # Persistent named volumes for scan data
-      - osmedeus-output:/root/osmedeus-base/output
-      - osmedeus-sessions:/root/osmedeus-base/sessions
+      # Persistent named volumes (outside base folder to avoid rm -rf conflict)
+      - osmedeus-output:/root/workspaces-osmedeus
+      - osmedeus-sessions:/root/osmedeus-sessions
 
     environment:
+      # Server credentials (stable across restarts)
+      - OSM_USERNAME=${OSM_USERNAME:-admin}
+      - OSM_PASSWORD=${OSM_PASSWORD:-admin}
       # LLM / AI configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
