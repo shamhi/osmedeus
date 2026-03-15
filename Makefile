@@ -1,4 +1,4 @@
-.PHONY: build run test test-unit test-integration test-workflow-integration test-e2e test-e2e-verbose test-e2e-ssh test-e2e-api test-e2e-nix test-e2e-install test-e2e-cloud test-sudo test-cloud test-docker test-ssh test-distributed distributed-e2e-up distributed-e2e-run distributed-e2e-down test-canary-all test-canary-repo test-canary-domain test-canary-ip test-canary-general canary-up canary-down test-all test-summary test-ci clean install install-gotestsum lint fmt db-seed db-clean db-migrate run-server-debug swagger update-ui snapshot-release github-release run-github-action docker-toolbox docker-toolbox-run docker-toolbox-shell docker-publish
+.PHONY: build run test test-unit test-integration test-workflow-integration test-e2e test-e2e-verbose test-e2e-ssh test-e2e-api test-e2e-nix test-e2e-install test-e2e-cloud test-sudo test-cloud test-docker test-ssh test-distributed distributed-e2e-up distributed-e2e-run distributed-e2e-down test-canary-all test-canary-repo test-canary-domain test-canary-ip test-canary-general canary-up canary-down test-all test-summary test-ci clean install install-gotestsum lint fmt db-seed db-clean db-migrate run-server-debug swagger update-ui snapshot-release github-release run-github-action docker-toolbox docker-toolbox-run docker-toolbox-shell docker-publish ai-build ai-up ai-down ai-rebuild ai-restart ai-logs ai-shell ai-scan ai-recon ai-vuln ai-redteam ai-status ai-tools ai-clean ai-validate
 
 # Go parameters
 GOCMD=go
@@ -432,6 +432,105 @@ db-migrate: build
 	@echo "$(PREFIX) Running database migrations..."
 	./$(BINARY_DIR)/$(BINARY_NAME) db migrate
 
+# ── AI Scanner ─────────────────────────────────────────────────────────────────
+AI_COMPOSE=docker compose -f build/docker/docker-compose.ai.yaml
+AI_CONTAINER=osmedeus-ai
+
+# Build the AI scanner Docker image
+ai-build:
+	@echo "$(PREFIX) Building AI scanner image..."
+	$(AI_COMPOSE) build \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		--build-arg COMMIT_HASH=$(COMMIT_HASH)
+
+# Start AI scanner stack (server + redis)
+ai-up:
+	@echo "$(PREFIX) Starting AI scanner stack..."
+	$(AI_COMPOSE) up -d
+	@echo "$(PREFIX) Waiting for health check..."
+	@for i in $$(seq 1 30); do curl -sf http://localhost:8002/health > /dev/null 2>&1 && break || sleep 2; done
+	@echo "$(PREFIX) AI scanner ready at http://localhost:8002"
+
+# Stop AI scanner stack
+ai-down:
+	@echo "$(PREFIX) Stopping AI scanner stack..."
+	$(AI_COMPOSE) down
+
+# Rebuild from scratch (no cache)
+ai-rebuild:
+	@echo "$(PREFIX) Rebuilding AI scanner image (no cache)..."
+	$(AI_COMPOSE) build --no-cache \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		--build-arg COMMIT_HASH=$(COMMIT_HASH)
+	@$(MAKE) ai-up
+
+# Restart the scanner container (fast, no rebuild)
+ai-restart:
+	$(AI_COMPOSE) restart osmedeus
+
+# View logs (follow mode)
+ai-logs:
+	$(AI_COMPOSE) logs -f osmedeus
+
+# Open shell inside the scanner container
+ai-shell:
+	docker exec -it $(AI_CONTAINER) bash
+
+# Run a full AI scan against a target (usage: make ai-scan TARGET=example.com)
+ai-scan:
+	@if [ -z "$(TARGET)" ]; then echo "Usage: make ai-scan TARGET=example.com"; exit 1; fi
+	@echo "$(PREFIX) Running AI scan against $(TARGET)..."
+	docker exec $(AI_CONTAINER) osmedeus run -f ai-scan -t $(TARGET)
+
+# Run AI recon-only scan (usage: make ai-recon TARGET=example.com)
+ai-recon:
+	@if [ -z "$(TARGET)" ]; then echo "Usage: make ai-recon TARGET=example.com"; exit 1; fi
+	@echo "$(PREFIX) Running AI recon against $(TARGET)..."
+	docker exec $(AI_CONTAINER) osmedeus run -f ai-recon -t $(TARGET)
+
+# Run AI vuln assessment (usage: make ai-vuln TARGET=example.com)
+ai-vuln:
+	@if [ -z "$(TARGET)" ]; then echo "Usage: make ai-vuln TARGET=example.com"; exit 1; fi
+	@echo "$(PREFIX) Running AI vuln assessment against $(TARGET)..."
+	docker exec $(AI_CONTAINER) osmedeus run -f ai-vuln -t $(TARGET)
+
+# Run AI red team scan (usage: make ai-redteam TARGET=example.com)
+ai-redteam:
+	@if [ -z "$(TARGET)" ]; then echo "Usage: make ai-redteam TARGET=example.com"; exit 1; fi
+	@echo "$(PREFIX) Running AI red team scan against $(TARGET)..."
+	docker exec $(AI_CONTAINER) osmedeus run -f ai-redteam -t $(TARGET)
+
+# Show status of AI scanner stack
+ai-status:
+	@$(AI_COMPOSE) ps
+	@echo ""
+	@docker exec $(AI_CONTAINER) osmedeus workflow list 2>/dev/null || echo "Container not running"
+
+# List installed tools inside AI scanner container
+ai-tools:
+	@docker exec $(AI_CONTAINER) sh -c '\
+		echo "── Go tools ──" && \
+		for t in subfinder httpx dnsx nuclei naabu amass ffuf; do \
+			which $$t >/dev/null 2>&1 && echo "  ✓ $$t" || echo "  ✗ $$t (missing)"; \
+		done && \
+		echo "── System tools ──" && \
+		for t in nmap masscan nikto sqlmap testssl.sh chromium python3; do \
+			which $$t >/dev/null 2>&1 && echo "  ✓ $$t" || echo "  ✗ $$t (missing)"; \
+		done'
+
+# Clean AI scanner resources (volumes, images)
+ai-clean:
+	@echo "$(PREFIX) Cleaning AI scanner..."
+	$(AI_COMPOSE) down -v --rmi local 2>/dev/null || true
+
+# Validate AI workflow YAML files
+ai-validate: build
+	@echo "$(PREFIX) Validating AI workflows..."
+	@for f in workflows/flows/ai-*.yaml; do \
+		echo "  Validating $$f..."; \
+		./$(BINARY_DIR)/$(BINARY_NAME) workflow validate $$(basename $$f .yaml) 2>&1 || true; \
+	done
+
 # Help
 help:
 	@echo ""
@@ -496,6 +595,23 @@ help:
 	@echo "    make docker-toolbox       Build toolbox image (all tools pre-installed)"
 	@echo "    make docker-toolbox-run   Start toolbox container"
 	@echo "    make docker-toolbox-shell Enter toolbox container shell"
+	@echo ""
+	@echo "\033[33m  AI SCANNER\033[0m"
+	@echo "    make ai-build         Build AI scanner Docker image"
+	@echo "    make ai-up            Start AI scanner stack (server + redis)"
+	@echo "    make ai-down          Stop AI scanner stack"
+	@echo "    make ai-rebuild       Rebuild from scratch (no cache) and start"
+	@echo "    make ai-restart       Restart scanner container (fast)"
+	@echo "    make ai-logs          Tail scanner logs (follow mode)"
+	@echo "    make ai-shell         Open shell inside scanner container"
+	@echo "    make ai-scan TARGET=x Run full AI scan against target"
+	@echo "    make ai-recon TARGET=x Run AI recon-only scan"
+	@echo "    make ai-vuln TARGET=x  Run AI vuln assessment"
+	@echo "    make ai-redteam TARGET=x Run AI red team scan"
+	@echo "    make ai-status        Show scanner stack status"
+	@echo "    make ai-tools         List installed tools in container"
+	@echo "    make ai-clean         Clean scanner resources (volumes + images)"
+	@echo "    make ai-validate      Validate AI workflow YAML files"
 	@echo ""
 	@echo "\033[33m  RELEASE\033[0m"
 	@echo "    make snapshot-release Build local snapshot release (no publish)"
