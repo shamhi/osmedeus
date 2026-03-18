@@ -1,9 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Dockerfile.ai — Osmedeus AI Scanner (all security tools pre-installed)
 #
-# Multi-stage build:
-#   Stage 1 (builder)  — compile osmedeus + Go security tools
-#   Stage 2 (runtime)  — minimal Debian with all tools ready to run
+# Multi-stage build using pre-built binaries from official images:
+#   - ProjectDiscovery tools: nuclei, subfinder, httpx, dnsx, naabu
+#   - OWASP Amass, ffuf, gau
+#   - Osmedeus compiled from source
+#
+# Build time: ~2-3 minutes (vs 10-15 min when compiling tools from source)
 #
 # Build:
 #   docker build -f build/docker/Dockerfile.ai -t osmedeus-ai .
@@ -12,18 +15,20 @@
 #   docker run -e OPENAI_API_KEY=sk-xxx -p 8002:8002 osmedeus-ai
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Stage 1: builder ─────────────────────────────────────────────────────────
+# ── Pre-built tool images (official sources) ─────────────────────────────────
+FROM projectdiscovery/nuclei:latest    AS nuclei
+FROM projectdiscovery/subfinder:latest AS subfinder
+FROM projectdiscovery/httpx:latest     AS httpx
+FROM projectdiscovery/dnsx:latest      AS dnsx
+FROM projectdiscovery/naabu:latest     AS naabu
+FROM caffix/amass:latest               AS amass
+
+# ── Stage: osmedeus builder ──────────────────────────────────────────────────
 FROM golang:1.26-bookworm AS builder
 
 ARG BUILD_TIME
 ARG COMMIT_HASH
 
-# System deps required by some Go tools (naabu needs libpcap)
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends libpcap-dev git ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
-# ── Build osmedeus binary ────────────────────────────────────────────────────
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -33,12 +38,13 @@ RUN CGO_ENABLED=0 go build \
     -ldflags "-X main.BuildTime=${BUILD_TIME} -X main.CommitHash=${COMMIT_HASH}" \
     -o /osmedeus ./cmd/osmedeus
 
-# ── Install Go-based security tools ──────────────────────────────────────────
-COPY build/docker/install-tools.sh /tmp/install-tools.sh
-RUN chmod +x /tmp/install-tools.sh && \
-    bash -c 'source /tmp/install-tools.sh; install_go_tools'
+# Install lightweight Go tools not available as Docker images
+RUN go install github.com/tomnomnom/waybackurls@latest && \
+    go install github.com/tomnomnom/httprobe@latest && \
+    go install github.com/ffuf/ffuf/v2@latest && \
+    go install github.com/lc/gau/v2/cmd/gau@latest
 
-# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+# ── Stage: runtime ───────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
 
 LABEL maintainer="osmedeus"
@@ -51,7 +57,7 @@ RUN apt-get update && \
         python3 python3-pip python3-venv \
         dnsutils whois curl wget \
         libpcap-dev git jq ca-certificates \
-        nmap masscan chromium \
+        nmap masscan chromium perl \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3 /usr/bin/python
 
@@ -70,8 +76,19 @@ RUN git clone --depth 1 https://github.com/drwetter/testssl.sh /opt/testssl.sh &
 # ── Copy osmedeus binary ─────────────────────────────────────────────────────
 COPY --from=builder /osmedeus /usr/local/bin/osmedeus
 
-# ── Copy Go tool binaries ────────────────────────────────────────────────────
-COPY --from=builder /go/bin/* /usr/local/bin/
+# ── Copy pre-built security tools from official images ───────────────────────
+COPY --from=nuclei    /usr/local/bin/nuclei    /usr/local/bin/nuclei
+COPY --from=subfinder /usr/local/bin/subfinder /usr/local/bin/subfinder
+COPY --from=httpx     /usr/local/bin/httpx     /usr/local/bin/httpx
+COPY --from=dnsx      /usr/local/bin/dnsx      /usr/local/bin/dnsx
+COPY --from=naabu     /usr/local/bin/naabu     /usr/local/bin/naabu
+COPY --from=amass     /bin/amass               /usr/local/bin/amass
+
+# ── Copy Go tools compiled in builder ────────────────────────────────────────
+COPY --from=builder /go/bin/waybackurls /usr/local/bin/waybackurls
+COPY --from=builder /go/bin/httprobe    /usr/local/bin/httprobe
+COPY --from=builder /go/bin/ffuf        /usr/local/bin/ffuf
+COPY --from=builder /go/bin/gau         /usr/local/bin/gau
 
 # ── Create base directory structure ──────────────────────────────────────────
 RUN mkdir -p /root/osmedeus-base/output \
@@ -104,3 +121,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # ── Default command — start API server ───────────────────────────────────────
 ENTRYPOINT ["osmedeus"]
 CMD ["server"]
+

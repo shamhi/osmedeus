@@ -133,45 +133,45 @@ test-e2e-verbose: build install-gotestsum
 
 # Docker runner tests
 test-docker: install-gotestsum
-	docker-compose -f docker-compose.test.yaml up -d
+	docker compose -f docker-compose.test.yaml up -d
 	$(TESTCMD) $(TESTFLAGS) -run Docker ./internal/runner/...
-	docker-compose -f docker-compose.test.yaml down
+	docker compose -f docker-compose.test.yaml down
 
 # SSH runner tests (using linuxserver/openssh-server)
 test-ssh: install-gotestsum
-	docker-compose -f build/docker/docker-compose.test.yaml up -d ssh-server
+	docker compose -f build/docker/docker-compose.test.yaml up -d ssh-server
 	sleep 5
 	$(TESTCMD) $(TESTFLAGS) -run SSH ./internal/runner/...
-	docker-compose -f build/docker/docker-compose.test.yaml down
+	docker compose -f build/docker/docker-compose.test.yaml down
 
 # SSH E2E tests (full workflow tests with SSH runner)
 test-e2e-ssh: build install-gotestsum
 	@echo "$(PREFIX) Starting SSH server for E2E tests..."
-	docker-compose -f build/docker/docker-compose.test.yaml up -d ssh-server
+	docker compose -f build/docker/docker-compose.test.yaml up -d ssh-server
 	@echo "$(PREFIX) Waiting for SSH server to be ready..."
 	@sleep 5
 	@echo "$(PREFIX) Running SSH E2E tests..."
 	$(TESTCMD) $(TESTFLAGS) -run SSH ./test/e2e/...
 	@echo "$(PREFIX) Cleaning up..."
-	docker-compose -f build/docker/docker-compose.test.yaml down -v
+	docker compose -f build/docker/docker-compose.test.yaml down -v
 
 # Distributed scan e2e tests (requires Docker for Redis)
 test-distributed: build install-gotestsum
 	@echo "$(PREFIX) Starting Redis for distributed tests..."
-	docker-compose -f build/docker/docker-compose.distributed-test.yaml up -d
+	docker compose -f build/docker/docker-compose.distributed-test.yaml up -d
 	@echo "$(PREFIX) Waiting for Redis to be ready..."
 	@sleep 3
 	@echo "$(PREFIX) Running distributed tests..."
 	$(TESTCMD) $(TESTFLAGS) -run Distributed ./test/e2e/...
 	@echo "$(PREFIX) Cleaning up..."
-	docker-compose -f build/docker/docker-compose.distributed-test.yaml down -v
+	docker compose -f build/docker/docker-compose.distributed-test.yaml down -v
 
 # Distributed E2E stack: redis + master + worker in Docker, then submit a real scan
 distributed-e2e-up:
 	@echo "$(PREFIX) Building distributed E2E stack..."
-	docker-compose -f build/docker/docker-compose.distributed-e2e.yaml build
+	docker compose -f build/docker/docker-compose.distributed-e2e.yaml build
 	@echo "$(PREFIX) Starting distributed E2E stack (redis + master + worker)..."
-	docker-compose -f build/docker/docker-compose.distributed-e2e.yaml up -d
+	docker compose -f build/docker/docker-compose.distributed-e2e.yaml up -d
 	@echo "$(PREFIX) Waiting for master to be healthy..."
 	@for i in $$(seq 1 30); do \
 		curl -sf http://localhost:8002/health > /dev/null 2>&1 && break; \
@@ -183,35 +183,35 @@ distributed-e2e-run:
 	@echo "$(PREFIX) Submitting distributed scan from master container..."
 	docker exec osm-e2e-master osmedeus run -f repo -D -t https://github.com/juice-shop/juice-shop
 	@echo "$(PREFIX) Scan submitted. Tailing worker logs (Ctrl+C to stop)..."
-	docker-compose -f build/docker/docker-compose.distributed-e2e.yaml logs -f worker
+	docker compose -f build/docker/docker-compose.distributed-e2e.yaml logs -f worker
 
 distributed-e2e-down:
 	@echo "$(PREFIX) Stopping distributed E2E stack..."
-	docker-compose -f build/docker/docker-compose.distributed-e2e.yaml down -v
+	docker compose -f build/docker/docker-compose.distributed-e2e.yaml down -v
 
 # API E2E tests (requires Docker for Redis, builds binary first)
 test-e2e-api: build install-gotestsum
 	@echo "$(PREFIX) Starting Redis for API tests..."
-	docker-compose -f build/docker/docker-compose.distributed-test.yaml up -d
+	docker compose -f build/docker/docker-compose.distributed-test.yaml up -d
 	@echo "$(PREFIX) Waiting for Redis to be ready..."
 	@sleep 3
 	@echo "$(PREFIX) Running API E2E tests..."
 	$(TESTCMD) $(TESTFLAGS) -run API ./test/e2e/...
 	@echo "$(PREFIX) Cleaning up..."
-	docker-compose -f build/docker/docker-compose.distributed-test.yaml down -v
+	docker compose -f build/docker/docker-compose.distributed-test.yaml down -v
 
 # Nix E2E tests (requires Docker for Nix container)
 test-e2e-nix: build install-gotestsum
 	@echo "$(PREFIX) Building Nix test container..."
-	docker-compose -f build/docker/docker-compose.nix-test.yaml build
+	docker compose -f build/docker/docker-compose.nix-test.yaml build
 	@echo "$(PREFIX) Starting Nix test container..."
-	docker-compose -f build/docker/docker-compose.nix-test.yaml up -d
+	docker compose -f build/docker/docker-compose.nix-test.yaml up -d
 	@echo "$(PREFIX) Waiting for Nix container to be ready..."
 	@sleep 3
 	@echo "$(PREFIX) Running Nix E2E tests..."
 	$(TESTCMD) $(TESTFLAGS) -run TestNix ./test/e2e/...
 	@echo "$(PREFIX) Cleaning up..."
-	docker-compose -f build/docker/docker-compose.nix-test.yaml down -v
+	docker compose -f build/docker/docker-compose.nix-test.yaml down -v
 
 # Install E2E tests (workflow and base installation from zip/URL/git)
 test-e2e-install: build install-gotestsum
@@ -239,11 +239,11 @@ test-cloud: install-gotestsum
 # Build and start the canary container (shared setup for individual targets)
 canary-up: install-gotestsum
 	@echo "$(PREFIX) Cleaning up any existing canary container..."
-	-docker-compose -f build/docker/docker-compose.canary.yaml down -v 2>/dev/null
+	-docker compose -f build/docker/docker-compose.canary.yaml down -v 2>/dev/null
 	@echo "$(PREFIX) Building canary Docker image..."
-	docker-compose -f build/docker/docker-compose.canary.yaml build
+	docker compose -f build/docker/docker-compose.canary.yaml build
 	@echo "$(PREFIX) Starting canary container..."
-	docker-compose -f build/docker/docker-compose.canary.yaml up -d
+	docker compose -f build/docker/docker-compose.canary.yaml up -d
 	@echo "$(PREFIX) Waiting for API server..."
 	@for i in $$(seq 1 60); do curl -sf http://localhost:8002/health > /dev/null 2>&1 && break || sleep 2; done
 	@echo "$(PREFIX) Canary container ready."
@@ -251,7 +251,7 @@ canary-up: install-gotestsum
 # Tear down the canary container
 canary-down:
 	@echo "$(PREFIX) Cleaning up canary container..."
-	docker-compose -f build/docker/docker-compose.canary.yaml down -v
+	docker compose -f build/docker/docker-compose.canary.yaml down -v
 
 # Run ALL canary scans (builds container, runs all 4, cleans up — 60-120min)
 test-canary-all: canary-up
@@ -354,16 +354,16 @@ docker-run:
 # Docker toolbox build (with all tools pre-installed)
 docker-toolbox:
 	@echo "$(PREFIX) Building osmedeus-toolbox Docker image..."
-	docker-compose -f build/docker/docker-compose.toolbox.yaml build \
+	docker compose -f build/docker/docker-compose.toolbox.yaml build \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
 		--build-arg COMMIT_HASH=$(COMMIT_HASH)
 	@echo "$(PREFIX) osmedeus-toolbox image built successfully!"
-	@echo "$(PREFIX) Run with: docker-compose -f build/docker/docker-compose.toolbox.yaml up -d"
+	@echo "$(PREFIX) Run with: docker compose -f build/docker/docker-compose.toolbox.yaml up -d"
 
 # Docker toolbox run
 docker-toolbox-run:
 	@echo "$(PREFIX) Starting osmedeus-toolbox container..."
-	docker-compose -f build/docker/docker-compose.toolbox.yaml up -d
+	docker compose -f build/docker/docker-compose.toolbox.yaml up -d
 	@echo "$(PREFIX) Container started! Enter with: docker exec -it osmedeus-toolbox bash"
 
 # Docker toolbox shell (interactive)
